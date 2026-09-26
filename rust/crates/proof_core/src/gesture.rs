@@ -48,11 +48,7 @@ pub fn is_tap(s: &Stroke, slop: f32) -> bool {
 /// Dominant direction of a swipe (unit vector) if it travelled at least `min_len`.
 pub fn swipe_dir(s: &Stroke, min_len: f32) -> Option<V2> {
     let c = s.chord();
-    if c.len() >= min_len {
-        Some(c.norm())
-    } else {
-        None
-    }
+    if c.len() >= min_len { Some(c.norm()) } else { None }
 }
 
 /// Snap a direction to one of four compass directions: 0 up, 1 right, 2 down, 3 left.
@@ -106,10 +102,7 @@ pub fn fold_quality(swipes: &[V2], expected: &[usize]) -> f32 {
     }
     let mut sum = 0.0;
     for (i, e) in expected.iter().enumerate() {
-        let q = swipes
-            .get(i)
-            .map(|d| d.norm().dot(compass_vec(*e)).max(0.0))
-            .unwrap_or(0.0);
+        let q = swipes.get(i).map(|d| d.norm().dot(compass_vec(*e)).max(0.0)).unwrap_or(0.0);
         sum += q;
     }
     (sum / expected.len() as f32).clamp(0.0, 1.0)
@@ -124,22 +117,13 @@ mod tests {
 
     fn stroke(pts: &[V2]) -> Stroke {
         Stroke {
-            samples: pts
-                .iter()
-                .enumerate()
-                .map(|(i, p)| Sample {
-                    pos: *p,
-                    t: i as f32 * 0.016,
-                })
-                .collect(),
+            samples: pts.iter().enumerate().map(|(i, p)| Sample { pos: *p, t: i as f32 * 0.016 }).collect(),
         }
     }
 
     #[test]
     fn circles_count_turns() {
-        let pts: Vec<V2> = (0..=100)
-            .map(|i| V2::from_angle(i as f32 / 100.0 * TAU * 2.0) * 50.0)
-            .collect();
+        let pts: Vec<V2> = (0..=100).map(|i| V2::from_angle(i as f32 / 100.0 * TAU * 2.0) * 50.0).collect();
         let t = turns_around(&stroke(&pts), V2::ZERO);
         assert!((t - 2.0).abs() < 0.05, "{t}");
         assert!((stir_quality(t) - 1.0).abs() < 1e-3);

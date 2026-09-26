@@ -12,8 +12,6 @@ pub fn write_png(path: &Path, w: u32, h: u32, rgba: &[u8]) -> std::io::Result<()
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     let mut writer = enc.write_header().map_err(std::io::Error::other)?;
-    writer
-        .write_image_data(rgba)
-        .map_err(std::io::Error::other)?;
+    writer.write_image_data(rgba).map_err(std::io::Error::other)?;
     Ok(())
 }

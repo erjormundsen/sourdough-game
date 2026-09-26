@@ -30,10 +30,7 @@ impl Board {
         let palette = edition.palette();
         Board {
             canvas: Canvas::paper(w, h, scale, &palette),
-            cfg: RasterConfig {
-                scale,
-                ..RasterConfig::default()
-            },
+            cfg: RasterConfig { scale, ..RasterConfig::default() },
             palette,
             style: CompositeStyle::default(),
         }
@@ -48,45 +45,24 @@ impl Board {
     }
 
     fn save(&self, path: &std::path::Path) {
-        proof_tools::write_png(
-            path,
-            self.canvas.width,
-            self.canvas.height,
-            &self.canvas.to_rgba8(),
-        )
-        .unwrap();
+        proof_tools::write_png(path, self.canvas.width, self.canvas.height, &self.canvas.to_rgba8()).unwrap();
         println!("wrote {}", path.display());
     }
 }
 
 fn cuts_for(p: Pattern, shape: Shape, bloom: f32, ear: f32) -> Vec<CutView> {
-    template(p, shape)
-        .into_iter()
-        .map(|pts| CutView { pts, bloom, ear })
-        .collect()
+    template(p, shape).into_iter().map(|pts| CutView { pts, bloom, ear }).collect()
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let out = PathBuf::from(
-        args.get(1)
-            .cloned()
-            .unwrap_or_else(|| "../out/artboard".into()),
-    );
+    let out = PathBuf::from(args.get(1).cloned().unwrap_or_else(|| "../out/artboard".into()));
     let scale: f32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1.0);
 
     // --- Sheet 1: pets & bread -------------------------------------------------
     for edition in [Edition::Dawn, Edition::Daylight, Edition::Dusk] {
         let mut b = Board::new(1440.0, 1500.0, scale, edition);
-        b.put(v2(180.0, 330.0), |d| {
-            jar(
-                d,
-                &JarView {
-                    expr: Expr::Content,
-                    ..JarView::default()
-                },
-            )
-        });
+        b.put(v2(180.0, 330.0), |d| jar(d, &JarView { expr: Expr::Content, ..JarView::default() }));
         b.put(v2(470.0, 330.0), |d| {
             jar(
                 d,
@@ -119,10 +95,7 @@ fn main() {
             )
         });
         b.put(v2(1090.0, 250.0), |d| {
-            let mut v = LoafView {
-                bake: 0.0,
-                ..LoafView::default()
-            };
+            let mut v = LoafView { bake: 0.0, ..LoafView::default() };
             v.cuts = cuts_for(Pattern::Wheat, Shape::Boule, 0.0, 0.0);
             loaf_top(d, &v);
         });
@@ -181,9 +154,7 @@ fn main() {
             };
             loaf_top(d, &v)
         });
-        b.put(v2(930.0, 980.0), |d| {
-            crumb_slice(d, 300.0, 200.0, 0.85, 0.55, 3)
-        });
+        b.put(v2(930.0, 980.0), |d| crumb_slice(d, 300.0, 200.0, 0.85, 0.55, 3));
         b.put(v2(1260.0, 960.0), |d| {
             let v = LoafView {
                 recipe: Recipe::WholeWheat,
@@ -197,18 +168,12 @@ fn main() {
         });
         // Treats + bags.
         b.put(v2(150.0, 1310.0), |d| treat(d, Treat::Muffin, 150.0, 1));
-        b.put(v2(330.0, 1310.0), |d| {
-            treat(d, Treat::CinnamonBun, 150.0, 2)
-        });
+        b.put(v2(330.0, 1310.0), |d| treat(d, Treat::CinnamonBun, 150.0, 2));
         b.put(v2(510.0, 1310.0), |d| treat(d, Treat::Bagel, 150.0, 3));
         for (i, f) in Flour::ALL.iter().enumerate() {
-            b.put(v2(680.0 + i as f32 * 150.0, 1400.0), |d| {
-                props::flour_bag(d, *f)
-            });
+            b.put(v2(680.0 + i as f32 * 150.0, 1400.0), |d| props::flour_bag(d, *f));
         }
-        b.put(v2(1250.0, 1300.0), |d| {
-            props::banneton(d, Shape::Boule, 110.0, true)
-        });
+        b.put(v2(1250.0, 1300.0), |d| props::banneton(d, Shape::Boule, 110.0, true));
         b.save(&out.join(format!("sheet_bread_{edition:?}.png").to_lowercase()));
     }
 
@@ -227,58 +192,30 @@ fn main() {
     for (i, sp) in Species::ALL.iter().enumerate() {
         let x = 180.0 + (i % 4) as f32 * 360.0;
         let y = 330.0 + (i / 4) as f32 * 360.0;
-        b.put(v2(x, y), |d| {
-            critter(
-                d,
-                &CritterView {
-                    species: *sp,
-                    expr: exprs[i],
-                    t: 0.0,
-                },
-            )
-        });
+        b.put(v2(x, y), |d| critter(d, &CritterView { species: *sp, expr: exprs[i], t: 0.0 }));
     }
     b.put(v2(260.0, 1180.0), |d| {
-        oven(
-            d,
-            &OvenView {
-                glow: 0.8,
-                steam: 1.0,
-                expr: Expr::Happy,
-                ..OvenView::default()
-            },
-            |d| {
-                let v = LoafView {
-                    r: 44.0,
-                    bake: 0.6,
-                    cuts: cuts_for(Pattern::Ear, Shape::Boule, 0.8, 0.8),
-                    ..LoafView::default()
-                };
-                d.with(Xf::at(v2(0.0, -140.0)), |d| loaf_top(d, &v));
-            },
-        )
+        oven(d, &OvenView { glow: 0.8, steam: 1.0, expr: Expr::Happy, ..OvenView::default() }, |d| {
+            let v = LoafView {
+                r: 44.0,
+                bake: 0.6,
+                cuts: cuts_for(Pattern::Ear, Shape::Boule, 0.8, 0.8),
+                ..LoafView::default()
+            };
+            d.with(Xf::at(v2(0.0, -140.0)), |d| loaf_top(d, &v));
+        })
     });
-    b.put(v2(640.0, 1000.0), |d| {
-        props::ticket(d, 220.0, 170.0, Ink::Pink)
-    });
+    b.put(v2(640.0, 1000.0), |d| props::ticket(d, 220.0, 170.0, Ink::Pink));
     b.put(v2(640.0, 1000.0), |d| {
         props::pattern_icon(d, v2(-50.0, 20.0), 30.0, Pattern::Wheat);
         props::lemon_icon(d, v2(40.0, 20.0), 30.0);
     });
     b.put(v2(920.0, 1000.0), |d| {
-        d.with(Xf::IDENTITY.rotated(-0.25), |d| {
-            props::stamp(d, 90.0, 3, Ink::Pink, 4)
-        })
+        d.with(Xf::IDENTITY.rotated(-0.25), |d| props::stamp(d, 90.0, 3, Ink::Pink, 4))
     });
-    b.put(v2(1210.0, 980.0), |d| {
-        props::button(d, 240.0, 84.0, Ink::Yellow, false)
-    });
-    b.put(v2(1210.0, 1090.0), |d| {
-        props::button(d, 240.0, 84.0, Ink::Pink, true)
-    });
-    b.put(v2(640.0, 1260.0), |d| {
-        props::bubble(d, 260.0, 140.0, v2(-40.0, 110.0))
-    });
+    b.put(v2(1210.0, 980.0), |d| props::button(d, 240.0, 84.0, Ink::Yellow, false));
+    b.put(v2(1210.0, 1090.0), |d| props::button(d, 240.0, 84.0, Ink::Pink, true));
+    b.put(v2(640.0, 1260.0), |d| props::bubble(d, 260.0, 140.0, v2(-40.0, 110.0)));
     b.put(v2(640.0, 1250.0), |d| {
         props::cloud_icon(d, v2(-70.0, 0.0), 32.0);
         props::crust_icon(d, v2(0.0, 0.0), 30.0, 0.9);
@@ -286,12 +223,7 @@ fn main() {
     });
     b.put(v2(900.0, 1250.0), |d| {
         for (i, st) in Stencil::ALL.iter().enumerate() {
-            props::stencil_icon(
-                d,
-                v2((i % 2) as f32 * 80.0, (i / 2) as f32 * 80.0 - 40.0),
-                32.0,
-                *st,
-            );
+            props::stencil_icon(d, v2((i % 2) as f32 * 80.0, (i / 2) as f32 * 80.0 - 40.0), 32.0, *st);
         }
     });
     b.put(v2(1120.0, 1250.0), |d| {
@@ -316,7 +248,10 @@ fn main() {
     .enumerate()
     {
         b.palette = ed.palette();
-        b.put(v2(i as f32 * 720.0, 0.0), |d| backdrop(d, bd));
+        b.put(v2(i as f32 * 720.0, 0.0), |d| {
+            backdrop(d, bd, 1280.0);
+            proof_core::art::scenes::counter_front(d, bd, 1280.0);
+        });
     }
     b.save(&out.join("backdrops.png"));
 }

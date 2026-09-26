@@ -35,11 +35,7 @@ pub struct FaceParts {
 }
 
 impl FaceParts {
-    pub const ALL: FaceParts = FaceParts {
-        eyes: true,
-        mouth: true,
-        blush: true,
-    };
+    pub const ALL: FaceParts = FaceParts { eyes: true, mouth: true, blush: true };
 }
 
 /// Draw a face centred on `c`. `s` ≈ distance across the whole face; `look` nudges the eyes.
@@ -51,20 +47,13 @@ pub fn face(d: &mut DrawList, c: V2, s: f32, expr: Expr, look: V2) {
 pub fn face_parts(d: &mut DrawList, c: V2, s: f32, expr: Expr, look: V2, parts: FaceParts) {
     let ex = s * 0.25;
     let ey = -s * 0.02;
-    let eyes = [
-        c + v2(-ex, ey) + look * (s * 0.04),
-        c + v2(ex, ey) + look * (s * 0.04),
-    ];
+    let eyes = [c + v2(-ex, ey) + look * (s * 0.04), c + v2(ex, ey) + look * (s * 0.04)];
     let lw = (s * 0.05).max(1.6);
 
     // Blush first so the key lines sit on top.
     if parts.blush {
         for sx in [-1.0, 1.0] {
-            d.ht_add(
-                Ink::Pink,
-                0.62,
-                &ellipse(c + v2(sx * s * 0.39, s * 0.13), s * 0.12, s * 0.075, 0.0),
-            );
+            d.ht_add(Ink::Pink, 0.62, &ellipse(c + v2(sx * s * 0.39, s * 0.13), s * 0.12, s * 0.075, 0.0));
         }
     }
 
@@ -80,11 +69,7 @@ fn eyes_for(d: &mut DrawList, eyes: [V2; 2], s: f32, expr: Expr, lw: f32) {
     match expr {
         Expr::Content | Expr::Hungry | Expr::Hmm => {
             for e in eyes {
-                let ry = if expr == Expr::Hmm {
-                    s * 0.045
-                } else {
-                    s * 0.085
-                };
+                let ry = if expr == Expr::Hmm { s * 0.045 } else { s * 0.085 };
                 d.fill(Ink::Key, 1.0, &ellipse(e, s * 0.066, ry, 0.0));
                 if expr != Expr::Hmm {
                     d.knock(&circle(e + v2(s * 0.022, -s * 0.03), s * 0.024));
@@ -97,21 +82,14 @@ fn eyes_for(d: &mut DrawList, eyes: [V2; 2], s: f32, expr: Expr, lw: f32) {
                     d.line(
                         Ink::Key,
                         lw * 0.8,
-                        &[
-                            b + v2(-sx * s * 0.07, s * 0.03),
-                            b + v2(sx * s * 0.06, -s * 0.01),
-                        ],
+                        &[b + v2(-sx * s * 0.07, s * 0.03), b + v2(sx * s * 0.06, -s * 0.01)],
                     );
                 }
             }
         }
         Expr::Happy | Expr::Proud => {
             for e in eyes {
-                d.line(
-                    Ink::Key,
-                    lw,
-                    &arc(e + v2(0.0, s * 0.03), s * 0.07, PI * 1.1, PI * 1.9),
-                );
+                d.line(Ink::Key, lw, &arc(e + v2(0.0, s * 0.03), s * 0.07, PI * 1.1, PI * 1.9));
             }
         }
         Expr::Excited | Expr::Wow => {
@@ -123,11 +101,7 @@ fn eyes_for(d: &mut DrawList, eyes: [V2; 2], s: f32, expr: Expr, lw: f32) {
         }
         Expr::Sleepy => {
             for e in eyes {
-                d.line(
-                    Ink::Key,
-                    lw,
-                    &arc(e + v2(0.0, -s * 0.03), s * 0.065, PI * 0.15, PI * 0.85),
-                );
+                d.line(Ink::Key, lw, &arc(e + v2(0.0, -s * 0.03), s * 0.065, PI * 0.15, PI * 0.85));
             }
         }
     }
@@ -140,11 +114,7 @@ fn mouth_for(d: &mut DrawList, c: V2, s: f32, expr: Expr, lw: f32) {
             let r = s * 0.05;
             let mut w = arc(m + v2(-r, 0.0), r, PI * 0.05, PI * 0.95);
             w.reverse();
-            w.extend(
-                arc(m + v2(r, 0.0), r, PI * 0.05, PI * 0.95)
-                    .into_iter()
-                    .rev(),
-            );
+            w.extend(arc(m + v2(r, 0.0), r, PI * 0.05, PI * 0.95).into_iter().rev());
             d.line(Ink::Key, lw * 0.9, &w);
         }
         Expr::Excited | Expr::Proud => {
@@ -163,11 +133,7 @@ fn mouth_for(d: &mut DrawList, c: V2, s: f32, expr: Expr, lw: f32) {
             d.outline(Ink::Key, lw * 0.9, &o);
         }
         Expr::Sleepy => {
-            d.outline(
-                Ink::Key,
-                lw * 0.8,
-                &ellipse(m + v2(0.0, s * 0.01), s * 0.028, s * 0.034, 0.0),
-            );
+            d.outline(Ink::Key, lw * 0.8, &ellipse(m + v2(0.0, s * 0.01), s * 0.028, s * 0.034, 0.0));
         }
         Expr::Hungry => {
             let pts: Vec<V2> = (0..=12)
@@ -179,11 +145,7 @@ fn mouth_for(d: &mut DrawList, c: V2, s: f32, expr: Expr, lw: f32) {
             d.line(Ink::Key, lw * 0.85, &pts);
         }
         Expr::Hmm => {
-            d.line(
-                Ink::Key,
-                lw * 0.9,
-                &[m + v2(-s * 0.07, s * 0.01), m + v2(s * 0.07, -s * 0.005)],
-            );
+            d.line(Ink::Key, lw * 0.9, &[m + v2(-s * 0.07, s * 0.01), m + v2(s * 0.07, -s * 0.005)]);
         }
     }
 }

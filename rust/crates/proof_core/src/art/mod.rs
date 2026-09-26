@@ -6,6 +6,7 @@
 pub mod bread;
 pub mod critters;
 pub mod face;
+pub mod icons;
 pub mod jar;
 pub mod oven;
 pub mod props;
@@ -38,10 +39,6 @@ pub fn zzz(d: &mut DrawList, c: V2, s: f32) {
     for (i, k) in [1.0f32, 0.8, 0.62].iter().enumerate() {
         let o = c + v2(i as f32 * s * 0.75, -(i as f32) * s * 0.9);
         let w = s * k;
-        d.line(
-            Ink::Key,
-            s * 0.16,
-            &[o, o + v2(w, 0.0), o + v2(0.0, w), o + v2(w, w)],
-        );
+        d.line(Ink::Key, s * 0.16, &[o, o + v2(w, 0.0), o + v2(0.0, w), o + v2(w, w)]);
     }
 }

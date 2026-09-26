@@ -105,13 +105,7 @@ impl Starter {
         // Discard half, top up: the level drops back to the band.
         self.band = 0.28;
         self.rise = 0.28;
-        FeedResult {
-            pep_before,
-            pep_after: self.pep,
-            tang_before,
-            tang_after: self.tang,
-            revived,
-        }
+        FeedResult { pep_before, pep_after: self.pep, tang_before, tang_after: self.tang, revived }
     }
 
     /// Advance one night.

@@ -13,8 +13,8 @@ use proof_core::draw::{DrawList, Mode, Op, Screen, Shape};
 use proof_core::geom::{Rect, V2, v2};
 use proof_core::ink::{Palette, Rgb};
 use tiny_skia::{
-    BlendMode, Color, FillRule, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, Pixmap, Shader,
-    Stroke, Transform,
+    BlendMode, Color, FillRule, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, Pixmap, Shader, Stroke,
+    Transform,
 };
 
 /// How to rasterise a list.
@@ -36,12 +36,7 @@ impl Default for RasterConfig {
             scale: 1.0,
             pitch: 4.6,
             // Classic riso-ish screen angles so overlapping halftones don't moiré.
-            angles: [
-                15f32.to_radians(),
-                0.0,
-                75f32.to_radians(),
-                45f32.to_radians(),
-            ],
+            angles: [15f32.to_radians(), 0.0, 75f32.to_radians(), 45f32.to_radians()],
             pad: 10.0,
         }
     }
@@ -150,15 +145,7 @@ fn mask_geo(mask: &mut Mask, geo: &Geo, ts: Transform, first: bool) {
 
 /// Rasterise `list` into plates. `bounds` (reference units) defaults to the list's ink bounds.
 pub fn rasterize(list: &DrawList, cfg: &RasterConfig, bounds: Option<Rect>) -> Plates {
-    let b = bounds
-        .or_else(|| list.bounds())
-        .unwrap_or(Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 1.0,
-            h: 1.0,
-        })
-        .grow(cfg.pad);
+    let b = bounds.or_else(|| list.bounds()).unwrap_or(Rect { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }).grow(cfg.pad);
     let s = cfg.scale;
     let ox = (b.x * s).floor();
     let oy = (b.y * s).floor();
@@ -209,11 +196,7 @@ pub fn rasterize(list: &DrawList, cfg: &RasterConfig, bounds: Option<Rect>) -> P
                 };
                 draw_geo(&mut plates[p.ink.idx()], &geo, &paint, ts, clip);
             }
-            Op::Knock {
-                tone,
-                screen,
-                plates: mask_bits,
-            } => {
+            Op::Knock { tone, screen, plates: mask_bits } => {
                 for (i, plate) in plates.iter_mut().enumerate() {
                     if mask_bits & (1 << i) == 0 {
                         continue;
@@ -239,10 +222,7 @@ pub fn rasterize(list: &DrawList, cfg: &RasterConfig, bounds: Option<Rect>) -> P
                     draw_geo(plate, &geo, &solid, ts, clip);
                 }
                 let bk = backing.get_or_insert_with(|| Pixmap::new(w, h).expect("backing"));
-                let paint = Paint {
-                    blend_mode: BlendMode::SourceOver,
-                    ..solid
-                };
+                let paint = Paint { blend_mode: BlendMode::SourceOver, ..solid };
                 draw_geo(bk, &geo, &paint, ts, clip);
             }
             Op::ClipPush | Op::ClipPop => unreachable!(),
@@ -258,14 +238,7 @@ pub fn rasterize(list: &DrawList, cfg: &RasterConfig, bounds: Option<Rect>) -> P
         }
     }
     let backing = backing.map(|bk| bk.data().chunks_exact(4).map(|px| px[3]).collect());
-    Plates {
-        width: w,
-        height: h,
-        origin: v2(ox / s, oy / s),
-        scale: s,
-        rgba,
-        backing,
-    }
+    Plates { width: w, height: h, origin: v2(ox / s, oy / s), scale: s, rgba, backing }
 }
 
 fn shader_for<'a>(
@@ -345,13 +318,8 @@ impl Canvas {
     pub fn paper(w: f32, h: f32, scale: f32, palette: &Palette) -> Canvas {
         let (pw, ph) = ((w * scale).round() as u32, (h * scale).round() as u32);
         let grain = grain_texture();
-        let mut c = Canvas {
-            width: pw,
-            height: ph,
-            scale,
-            rgb: vec![palette.paper; (pw * ph) as usize],
-            grain,
-        };
+        let mut c =
+            Canvas { width: pw, height: ph, scale, rgb: vec![palette.paper; (pw * ph) as usize], grain };
         // Paper tooth: faint fibres from the grain texture.
         for y in 0..ph {
             for x in 0..pw {
@@ -368,10 +336,7 @@ impl Canvas {
         let gx = (x as i64).rem_euclid(GRAIN_SIZE as i64) as usize;
         let gy = (y as i64).rem_euclid(GRAIN_SIZE as i64) as usize;
         let i = (gy * GRAIN_SIZE + gx) * 4;
-        (
-            self.grain[i] as f32 / 255.0,
-            self.grain[i + 1] as f32 / 255.0,
-        )
+        (self.grain[i] as f32 / 255.0, self.grain[i + 1] as f32 / 255.0)
     }
 
     /// Multiply-composite plates onto the canvas at their reference position (+ `offset`).
@@ -405,11 +370,7 @@ impl Canvas {
                     let py = ((ry - pl.origin.y) * pl.scale - 0.5) as i64;
                     if px >= 0 && py >= 0 && (px as u32) < pl.width && (py as u32) < pl.height {
                         let a = bk[(py as u32 * pl.width + px as u32) as usize] as f32 / 255.0;
-                        let paper = palette.paper.times(Rgb(
-                            1.0 - 0.03 * g,
-                            1.0 - 0.03 * g,
-                            1.0 - 0.035 * g,
-                        ));
+                        let paper = palette.paper.times(Rgb(1.0 - 0.03 * g, 1.0 - 0.03 * g, 1.0 - 0.035 * g));
                         base = base.lerp(paper, a);
                     }
                 }
@@ -431,12 +392,7 @@ impl Canvas {
 }
 
 /// Convenience: composite one list on its own sheet of paper.
-pub fn preview(
-    list: &DrawList,
-    cfg: &RasterConfig,
-    palette: &Palette,
-    style: &CompositeStyle,
-) -> Canvas {
+pub fn preview(list: &DrawList, cfg: &RasterConfig, palette: &Palette, style: &CompositeStyle) -> Canvas {
     let pl = rasterize(list, cfg, None);
     let r = pl.ref_rect();
     let mut c = Canvas::paper(r.w, r.h, cfg.scale, palette);
@@ -505,10 +461,7 @@ mod tests {
     fn halftone_average_matches_tone() {
         let mut d = DrawList::new();
         d.ht(Ink::Blue, 0.4, &rect_poly(rect(0.0, 0.0, 200.0, 200.0)));
-        let cfg = RasterConfig {
-            scale: 2.0,
-            ..RasterConfig::default()
-        };
+        let cfg = RasterConfig { scale: 2.0, ..RasterConfig::default() };
         let pl = rasterize(&d, &cfg, None);
         let mut sum = 0.0;
         let mut n = 0.0;
@@ -530,11 +483,7 @@ mod tests {
         d.clipped(&rect_poly(rect(0.0, 0.0, 20.0, 20.0)), |d| {
             d.fill(Ink::Pink, 1.0, &rect_poly(rect(0.0, 0.0, 60.0, 60.0)));
         });
-        let pl = rasterize(
-            &d,
-            &RasterConfig::default(),
-            Some(rect(0.0, 0.0, 60.0, 60.0)),
-        );
+        let pl = rasterize(&d, &RasterConfig::default(), Some(rect(0.0, 0.0, 60.0, 60.0)));
         assert_eq!(at(&pl, 0, 10.0, 10.0), 255);
         assert_eq!(at(&pl, 0, 40.0, 40.0), 0);
     }

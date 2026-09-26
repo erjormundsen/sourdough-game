@@ -130,6 +130,8 @@ pub enum Action {
         name: String,
     },
     Sleep,
+    /// Mark a tutorial note as read (any phase).
+    Tip(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -153,60 +155,24 @@ pub struct NightReport {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    Dressed {
-        dough: u32,
-    },
-    Scored {
-        dough: u32,
-        report: scoring::ScoreReport,
-    },
-    Baked {
-        loaves: Vec<Loaf>,
-    },
-    TrayMade {
-        treat: Treat,
-        count: u32,
-    },
-    ShopOpened {
-        visitors: u32,
-    },
-    NextVisitor {
-        idx: usize,
-    },
+    Dressed { dough: u32 },
+    Scored { dough: u32, report: scoring::ScoreReport },
+    Baked { loaves: Vec<Loaf> },
+    TrayMade { treat: Treat, count: u32 },
+    ShopOpened { visitors: u32 },
+    NextVisitor { idx: usize },
     Served(ServeResult),
-    Skipped {
-        species: Species,
-        preordered: bool,
-    },
-    ShopClosed {
-        stats: DayStats,
-    },
-    Fed {
-        jar: usize,
-        result: FeedResult,
-    },
-    Mixed {
-        doughs: Vec<u32>,
-    },
+    Skipped { species: Species, preordered: bool },
+    ShopClosed { stats: DayStats },
+    Fed { jar: usize, result: FeedResult },
+    Mixed { doughs: Vec<u32> },
     Bought(Unlock),
-    NewStarter {
-        jar: usize,
-    },
-    Renamed {
-        jar: usize,
-    },
+    NewStarter { jar: usize },
+    Renamed { jar: usize },
     Slept(NightReport),
-    LevelUp {
-        level: u32,
-    },
-    Gift {
-        from: Species,
-        unlock: Option<Unlock>,
-        coins: u32,
-    },
-    NewPrint {
-        key: String,
-    },
+    LevelUp { level: u32 },
+    Gift { from: Species, unlock: Option<Unlock>, coins: u32 },
+    NewPrint { key: String },
     PhaseChanged(Phase),
 }
 
@@ -289,46 +255,17 @@ impl GameState {
         }
         // Day one is scripted to teach the loop: two loaves, three friends.
         g.tomorrow = vec![
-            g.visit(
-                Species::Bunny,
-                Order {
-                    wants: vec![Want::Stencil(Stencil::Heart)],
-                },
-                false,
-            ),
-            g.visit(
-                Species::Bear,
-                Order {
-                    wants: vec![Want::Crust(crate::bake::CrustLevel::Bold)],
-                },
-                false,
-            ),
-            g.visit(
-                Species::Duck,
-                Order {
-                    wants: vec![Want::Tangy],
-                },
-                false,
-            ),
+            g.visit(Species::Bunny, Order { wants: vec![Want::Stencil(Stencil::Heart)] }, false),
+            g.visit(Species::Bear, Order { wants: vec![Want::Crust(crate::bake::CrustLevel::Bold)] }, false),
+            g.visit(Species::Duck, Order { wants: vec![Want::Tangy] }, false),
         ];
         g
     }
 
     fn visit(&mut self, species: Species, order: Order, preorder: bool) -> Visit {
         let p = customer::profile(species);
-        let hello = self
-            .rng
-            .pick(p.hello)
-            .copied()
-            .unwrap_or("Hello!")
-            .to_string();
-        Visit {
-            species,
-            order,
-            preorder,
-            outcome: None,
-            hello,
-        }
+        let hello = self.rng.pick(p.hello).copied().unwrap_or("Hello!").to_string();
+        Visit { species, order, preorder, outcome: None, hello }
     }
 
     fn new_dough(
@@ -385,11 +322,7 @@ impl GameState {
     }
 
     pub fn current_visitor(&self) -> Option<&Visit> {
-        if self.phase == Phase::Shop {
-            self.visitors.get(self.visitor_idx)
-        } else {
-            None
-        }
+        if self.phase == Phase::Shop { self.visitors.get(self.visitor_idx) } else { None }
     }
 
     pub fn fridge_free(&self) -> u32 {
@@ -397,55 +330,31 @@ impl GameState {
     }
 
     pub fn unlocked_recipes(&self) -> Vec<Recipe> {
-        Recipe::ALL
-            .into_iter()
-            .filter(|r| self.has(Unlock::Recipe(*r)))
-            .collect()
+        Recipe::ALL.into_iter().filter(|r| self.has(Unlock::Recipe(*r))).collect()
     }
     pub fn unlocked_flours(&self) -> Vec<Flour> {
-        Flour::ALL
-            .into_iter()
-            .filter(|f| self.has(Unlock::Flour(*f)))
-            .collect()
+        Flour::ALL.into_iter().filter(|f| self.has(Unlock::Flour(*f))).collect()
     }
     pub fn unlocked_stencils(&self) -> Vec<Stencil> {
-        Stencil::ALL
-            .into_iter()
-            .filter(|s| self.has(Unlock::Stencil(*s)))
-            .collect()
+        Stencil::ALL.into_iter().filter(|s| self.has(Unlock::Stencil(*s))).collect()
     }
     pub fn unlocked_toppings(&self) -> Vec<Topping> {
-        Topping::ALL
-            .into_iter()
-            .filter(|t| self.has(Unlock::Topping(*t)))
-            .collect()
+        Topping::ALL.into_iter().filter(|t| self.has(Unlock::Topping(*t))).collect()
     }
     pub fn unlocked_patterns(&self) -> Vec<Pattern> {
-        Pattern::ALL
-            .into_iter()
-            .filter(|p| self.has(Unlock::Pattern(*p)))
-            .collect()
+        Pattern::ALL.into_iter().filter(|p| self.has(Unlock::Pattern(*p))).collect()
     }
     pub fn unlocked_treats(&self) -> Vec<Treat> {
-        Treat::ALL
-            .into_iter()
-            .filter(|t| self.has(Unlock::Treat(*t)))
-            .collect()
+        Treat::ALL.into_iter().filter(|t| self.has(Unlock::Treat(*t))).collect()
     }
     pub fn customers(&self) -> Vec<Species> {
         let lvl = self.level();
-        Species::ALL
-            .into_iter()
-            .filter(|s| economy::customer_level(*s) <= lvl)
-            .collect()
+        Species::ALL.into_iter().filter(|s| economy::customer_level(*s) <= lvl).collect()
     }
 
     /// Catalog items the player can see (owned ones excluded).
     pub fn shop_items(&self) -> Vec<economy::CatalogItem> {
-        economy::catalog(self.level())
-            .filter(|c| !self.has(c.unlock))
-            .copied()
-            .collect()
+        economy::catalog(self.level()).filter(|c| !self.has(c.unlock)).copied().collect()
     }
 
     pub fn fridge_dough(&self, id: u32) -> Option<&Dough> {
@@ -474,14 +383,7 @@ impl GameState {
     pub fn apply(&mut self, action: Action) -> Outcome {
         use Action as A;
         match (self.phase, action) {
-            (
-                Phase::Morning,
-                A::Dress {
-                    dough,
-                    stencil,
-                    topping,
-                },
-            ) => self.dress(dough, stencil, topping),
+            (Phase::Morning, A::Dress { dough, stencil, topping }) => self.dress(dough, stencil, topping),
             (Phase::Morning, A::Score { dough, cuts, guide }) => self.score(dough, cuts, guide),
             (Phase::Morning, A::Bake { doughs, crust }) => self.bake(doughs, crust),
             (Phase::Morning, A::MakeTray { treat, quality }) => self.make_tray(treat, quality),
@@ -490,27 +392,20 @@ impl GameState {
             (Phase::Shop, A::Skip) => self.skip(),
             (Phase::Shop, A::CloseShop) => self.close_shop(),
             (Phase::Evening, A::Feed { jar, flour, stir }) => self.feed(jar, flour, stir),
-            (
-                Phase::Evening,
-                A::Mix {
-                    recipe,
-                    jar,
-                    shape,
-                    fold,
-                },
-            ) => self.mix(recipe, jar, shape, fold),
+            (Phase::Evening, A::Mix { recipe, jar, shape, fold }) => self.mix(recipe, jar, shape, fold),
             (Phase::Evening, A::Buy(u)) => self.buy(u),
             (_, A::Rename { jar, name }) => self.rename(jar, name),
+            (_, A::Tip(key)) => {
+                self.mark_tip(&key);
+                Ok(Vec::new())
+            }
             (Phase::Evening, A::Sleep) => self.sleep(),
             _ => Err(Reject::WrongPhase),
         }
     }
 
     fn dough_mut(&mut self, id: u32) -> Result<&mut Dough, Reject> {
-        self.fridge
-            .iter_mut()
-            .find(|d| d.id == id)
-            .ok_or(Reject::NoSuchDough)
+        self.fridge.iter_mut().find(|d| d.id == id).ok_or(Reject::NoSuchDough)
     }
 
     fn dress(&mut self, id: u32, stencil: Option<Stencil>, topping: Option<Topping>) -> Outcome {
@@ -555,12 +450,7 @@ impl GameState {
             let dough = self.fridge.remove(pos);
             let loaf = bake::bake(&dough, crust, lid, self.day);
             self.today.baked += 1;
-            if self
-                .today
-                .best
-                .as_ref()
-                .is_none_or(|b| loaf.quality > b.quality)
-            {
+            if self.today.best.as_ref().is_none_or(|b| loaf.quality > b.quality) {
                 self.today.best = Some(loaf.clone());
             }
             let key = format!("{:?}/{:?}", loaf.recipe, loaf.pattern);
@@ -606,9 +496,7 @@ impl GameState {
         self.visitor_idx = 0;
         Ok(vec![
             Event::PhaseChanged(Phase::Shop),
-            Event::ShopOpened {
-                visitors: self.visitors.len() as u32,
-            },
+            Event::ShopOpened { visitors: self.visitors.len() as u32 },
             Event::NextVisitor { idx: 0 },
         ])
     }
@@ -624,11 +512,7 @@ impl GameState {
     }
 
     fn serve(&mut self, shelf_idx: usize) -> Outcome {
-        let visit = self
-            .visitors
-            .get(self.visitor_idx)
-            .cloned()
-            .ok_or(Reject::NoVisitor)?;
+        let visit = self.visitors.get(self.visitor_idx).cloned().ok_or(Reject::NoVisitor)?;
         if shelf_idx >= self.shelf.len() {
             return Err(Reject::ShelfEmpty);
         }
@@ -647,10 +531,7 @@ impl GameState {
         let before = friend.hearts;
         friend.hearts += hearts;
         let after = friend.hearts;
-        let gifts_due = [3u32, 6, 10]
-            .iter()
-            .filter(|&&t| before < t && after >= t)
-            .count() as u32;
+        let gifts_due = [3u32, 6, 10].iter().filter(|&&t| before < t && after >= t).count() as u32;
 
         self.coins += coins + tip;
         self.today.coins += coins;
@@ -687,19 +568,11 @@ impl GameState {
         match options.get(idx).copied().filter(|u| !self.has(*u)) {
             Some(u) => {
                 self.grant(u);
-                Event::Gift {
-                    from,
-                    unlock: Some(u),
-                    coins: 0,
-                }
+                Event::Gift { from, unlock: Some(u), coins: 0 }
             }
             None => {
                 self.coins += 25;
-                Event::Gift {
-                    from,
-                    unlock: None,
-                    coins: 25,
-                }
+                Event::Gift { from, unlock: None, coins: 25 }
             }
         }
     }
@@ -707,18 +580,12 @@ impl GameState {
     fn advance_visitor(&mut self, events: &mut Vec<Event>) {
         self.visitor_idx += 1;
         if self.visitor_idx < self.visitors.len() {
-            events.push(Event::NextVisitor {
-                idx: self.visitor_idx,
-            });
+            events.push(Event::NextVisitor { idx: self.visitor_idx });
         }
     }
 
     fn skip(&mut self) -> Outcome {
-        let visit = self
-            .visitors
-            .get(self.visitor_idx)
-            .cloned()
-            .ok_or(Reject::NoVisitor)?;
+        let visit = self.visitors.get(self.visitor_idx).cloned().ok_or(Reject::NoVisitor)?;
         self.visitors[self.visitor_idx].outcome = Some(Reaction::Sorry);
         // Sold out? They leave a pre-order for tomorrow instead of going home sad.
         let preordered = self.shelf.is_empty();
@@ -728,10 +595,7 @@ impl GameState {
             v.outcome = None;
             self.tomorrow.push(v);
         }
-        let mut events = vec![Event::Skipped {
-            species: visit.species,
-            preordered,
-        }];
+        let mut events = vec![Event::Skipped { species: visit.species, preordered }];
         self.advance_visitor(&mut events);
         Ok(events)
     }
@@ -749,9 +613,7 @@ impl GameState {
         self.gain_xp(left, &mut events);
         self.plan_tomorrow();
         self.phase = Phase::Evening;
-        events.push(Event::ShopClosed {
-            stats: self.today.clone(),
-        });
+        events.push(Event::ShopClosed { stats: self.today.clone() });
         events.push(Event::PhaseChanged(Phase::Evening));
         Ok(events)
     }
@@ -842,10 +704,7 @@ impl GameState {
         if self.has(u) {
             return Err(Reject::AlreadyOwned);
         }
-        let item = CATALOG
-            .iter()
-            .find(|c| c.unlock == u)
-            .ok_or(Reject::NotUnlocked)?;
+        let item = CATALOG.iter().find(|c| c.unlock == u).ok_or(Reject::NotUnlocked)?;
         if item.level > self.level() {
             return Err(Reject::NotUnlocked);
         }
@@ -863,21 +722,14 @@ impl GameState {
         self.grant(u);
         let mut events = vec![Event::Bought(u)];
         if self.starters.len() > before {
-            events.push(Event::NewStarter {
-                jar: self.starters.len() - 1,
-            });
+            events.push(Event::NewStarter { jar: self.starters.len() - 1 });
         }
         Ok(events)
     }
 
     fn rename(&mut self, jar: usize, name: String) -> Outcome {
         let s = self.starters.get_mut(jar).ok_or(Reject::NoSuchJar)?;
-        let clean: String = name
-            .trim()
-            .chars()
-            .filter(|c| !c.is_control())
-            .take(14)
-            .collect();
+        let clean: String = name.trim().chars().filter(|c| !c.is_control()).take(14).collect();
         if !clean.is_empty() {
             s.name = clean;
         }
@@ -885,12 +737,8 @@ impl GameState {
     }
 
     fn sleep(&mut self) -> Outcome {
-        let hungry: Vec<String> = self
-            .starters
-            .iter()
-            .filter(|s| !s.fed_today)
-            .map(|s| s.name.clone())
-            .collect();
+        let hungry: Vec<String> =
+            self.starters.iter().filter(|s| !s.fed_today).map(|s| s.name.clone()).collect();
         for s in &mut self.starters {
             s.overnight();
         }
@@ -910,10 +758,7 @@ impl GameState {
             fridge: self.fridge.len() as u32,
             preorders: self.tomorrow.iter().filter(|v| v.preorder).count() as u32,
         };
-        Ok(vec![
-            Event::Slept(report),
-            Event::PhaseChanged(Phase::Morning),
-        ])
+        Ok(vec![Event::Slept(report), Event::PhaseChanged(Phase::Morning)])
     }
 
     // ------------------------------------------------------------------------------------
@@ -944,40 +789,18 @@ mod tests {
         assert_eq!(g.phase, Phase::Morning);
         let ids = g.bakeable();
         assert_eq!(ids.len(), 2);
-        g.apply(Action::Dress {
-            dough: ids[0],
-            stencil: Some(Stencil::Heart),
-            topping: None,
-        })
-        .unwrap();
-        g.apply(Action::Score {
-            dough: ids[0],
-            cuts: template(Pattern::Cross, Shape::Boule),
-            guide: None,
-        })
-        .unwrap();
-        g.apply(Action::Score {
-            dough: ids[1],
-            cuts: template(Pattern::Ear, Shape::Boule),
-            guide: None,
-        })
-        .unwrap();
-        let ev = g
-            .apply(Action::Bake {
-                doughs: ids.clone(),
-                crust: 0.85,
-            })
+        g.apply(Action::Dress { dough: ids[0], stencil: Some(Stencil::Heart), topping: None }).unwrap();
+        g.apply(Action::Score { dough: ids[0], cuts: template(Pattern::Cross, Shape::Boule), guide: None })
             .unwrap();
+        g.apply(Action::Score { dough: ids[1], cuts: template(Pattern::Ear, Shape::Boule), guide: None })
+            .unwrap();
+        let ev = g.apply(Action::Bake { doughs: ids.clone(), crust: 0.85 }).unwrap();
         assert!(matches!(ev[0], Event::Baked { ref loaves } if loaves.len() == 2));
         assert_eq!(g.shelf.len(), 2);
         g.apply(Action::OpenShop).unwrap();
         assert_eq!(g.visitors.len(), 3);
         // Mimi wants the heart loaf.
-        let heart = g
-            .shelf
-            .iter()
-            .position(|s| matches!(s, Good::Loaf(l) if l.stencil.is_some()))
-            .unwrap();
+        let heart = g.shelf.iter().position(|s| matches!(s, Good::Loaf(l) if l.stencil.is_some())).unwrap();
         let ev = g.apply(Action::Serve { shelf_idx: heart }).unwrap();
         match &ev[0] {
             Event::Served(r) => assert_eq!(r.reaction, Reaction::Love),
@@ -986,51 +809,18 @@ mod tests {
         g.apply(Action::Serve { shelf_idx: 0 }).unwrap();
         // Pip arrives to an empty shelf: leaves a pre-order.
         let ev = g.apply(Action::Skip).unwrap();
-        assert!(matches!(
-            ev[0],
-            Event::Skipped {
-                preordered: true,
-                ..
-            }
-        ));
+        assert!(matches!(ev[0], Event::Skipped { preordered: true, .. }));
         g.apply(Action::CloseShop).unwrap();
         assert_eq!(g.phase, Phase::Evening);
-        assert!(
-            g.tomorrow
-                .iter()
-                .any(|v| v.species == Species::Duck && v.preorder)
-        );
+        assert!(g.tomorrow.iter().any(|v| v.species == Species::Duck && v.preorder));
         assert!(g.coins > 10);
         // Evening: rye makes Bubbles tangy for Pip.
-        g.apply(Action::Feed {
-            jar: 0,
-            flour: Flour::Rye,
-            stir: 1.0,
-        })
-        .unwrap();
-        assert_eq!(
-            g.apply(Action::Feed {
-                jar: 0,
-                flour: Flour::Rye,
-                stir: 1.0
-            }),
-            Err(Reject::AlreadyFed)
-        );
-        g.apply(Action::Mix {
-            recipe: Recipe::Country,
-            jar: 0,
-            shape: Shape::Boule,
-            fold: 0.9,
-        })
-        .unwrap();
+        g.apply(Action::Feed { jar: 0, flour: Flour::Rye, stir: 1.0 }).unwrap();
+        assert_eq!(g.apply(Action::Feed { jar: 0, flour: Flour::Rye, stir: 1.0 }), Err(Reject::AlreadyFed));
+        g.apply(Action::Mix { recipe: Recipe::Country, jar: 0, shape: Shape::Boule, fold: 0.9 }).unwrap();
         assert_eq!(g.fridge.len(), 2);
         assert_eq!(
-            g.apply(Action::Mix {
-                recipe: Recipe::Country,
-                jar: 0,
-                shape: Shape::Boule,
-                fold: 0.9
-            }),
+            g.apply(Action::Mix { recipe: Recipe::Country, jar: 0, shape: Shape::Boule, fold: 0.9 }),
             Err(Reject::FridgeFull)
         );
         assert!(g.fridge.iter().all(|d| d.tang >= 0.5), "tangy for Pip");
@@ -1043,32 +833,20 @@ mod tests {
     fn actions_in_wrong_phase_are_rejected() {
         let mut g = GameState::new(2);
         assert_eq!(g.apply(Action::Sleep), Err(Reject::WrongPhase));
-        assert_eq!(
-            g.apply(Action::Serve { shelf_idx: 0 }),
-            Err(Reject::WrongPhase)
-        );
+        assert_eq!(g.apply(Action::Serve { shelf_idx: 0 }), Err(Reject::WrongPhase));
     }
 
     #[test]
     fn buying_needs_coins_and_level() {
         let mut g = GameState::new(3);
         g.phase = Phase::Evening;
-        assert_eq!(
-            g.apply(Action::Buy(Unlock::Recipe(Recipe::Cheddar))),
-            Err(Reject::NotUnlocked)
-        );
+        assert_eq!(g.apply(Action::Buy(Unlock::Recipe(Recipe::Cheddar))), Err(Reject::NotUnlocked));
         g.coins = 0;
-        assert_eq!(
-            g.apply(Action::Buy(Unlock::Fridge(4))),
-            Err(Reject::NotEnoughCoins)
-        );
+        assert_eq!(g.apply(Action::Buy(Unlock::Fridge(4))), Err(Reject::NotEnoughCoins));
         g.coins = 100;
         g.apply(Action::Buy(Unlock::Fridge(4))).unwrap();
         assert_eq!(g.fridge_slots, 4);
-        assert_eq!(
-            g.apply(Action::Buy(Unlock::Fridge(4))),
-            Err(Reject::AlreadyOwned)
-        );
+        assert_eq!(g.apply(Action::Buy(Unlock::Fridge(4))), Err(Reject::AlreadyOwned));
         g.xp = 100;
         g.coins = 100;
         let ev = g.apply(Action::Buy(Unlock::Jar(2))).unwrap();
@@ -1079,11 +857,7 @@ mod tests {
     fn save_round_trip() {
         let mut g = GameState::new(4);
         let ids = g.bakeable();
-        g.apply(Action::Bake {
-            doughs: ids,
-            crust: 0.5,
-        })
-        .unwrap();
+        g.apply(Action::Bake { doughs: ids, crust: 0.5 }).unwrap();
         let json = g.to_json();
         let back = GameState::from_json(&json).unwrap();
         assert_eq!(g, back);

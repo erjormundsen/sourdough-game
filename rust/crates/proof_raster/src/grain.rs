@@ -20,10 +20,7 @@ fn value_noise(x: f32, y: f32, cell: usize, seed: u32) -> f32 {
     let h = |i: i32, j: i32| {
         let i = i.rem_euclid(cells) as u32;
         let j = j.rem_euclid(cells) as u32;
-        hash01(
-            i.wrapping_mul(7919) ^ seed,
-            j.wrapping_add(seed.wrapping_mul(31)),
-        )
+        hash01(i.wrapping_mul(7919) ^ seed, j.wrapping_add(seed.wrapping_mul(31)))
     };
     let a = h(x0, y0) + (h(x0 + 1, y0) - h(x0, y0)) * sx;
     let b = h(x0, y0 + 1) + (h(x0 + 1, y0 + 1) - h(x0, y0 + 1)) * sx;
@@ -41,8 +38,7 @@ pub fn grain_texture() -> Vec<u8> {
             let white = hash01(x as u32, y as u32 ^ 0x5eed);
             let soft = value_noise(xf, yf, 2, 11);
             let fine = (0.55 * white + 0.45 * soft).powf(2.6);
-            let coarse =
-                (0.6 * value_noise(xf, yf, 64, 3) + 0.4 * value_noise(xf, yf, 16, 5)).powf(1.5);
+            let coarse = (0.6 * value_noise(xf, yf, 64, 3) + 0.4 * value_noise(xf, yf, 16, 5)).powf(1.5);
             // Fibres: stretched noise.
             let fib = value_noise(xf * 0.25, yf, 4, 17).powf(3.0);
             let i = (y * n + x) * 4;

@@ -1,5 +1,6 @@
 //! Proof core: all rules, simulation and procedural riso art. No engine dependencies.
 
+pub mod anim;
 pub mod art;
 pub mod bake;
 pub mod content;
@@ -11,6 +12,7 @@ pub mod gesture;
 pub mod ink;
 pub mod rng;
 pub mod scoring;
+pub mod sfx;
 pub mod sim;
 pub mod starter;
 pub mod state;

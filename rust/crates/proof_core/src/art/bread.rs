@@ -101,16 +101,12 @@ pub fn loaf_top(d: &mut DrawList, v: &LoafView) {
 
     // Base: pale dough → golden crust (knock first so the shadow never shows through).
     let yellow = 0.22 + 0.72 * b;
-    d.knock(&body);
+    d.backing(&body);
     d.fill(Ink::Yellow, yellow, &body);
     d.clipped(&body, |d| {
         // Browning: pink halftone deepening towards the rim, key specks for bold.
         let brown = b * (0.04 + 0.6 * v.crust);
-        let rye = if v.recipe == Recipe::DarkRye {
-            0.14
-        } else {
-            0.0
-        };
+        let rye = if v.recipe == Recipe::DarkRye { 0.14 } else { 0.0 };
         d.ht(Ink::Pink, (brown + 0.12 * b).min(0.95), &body);
         d.ht(Ink::Pink, brown * 0.75, &outline_of(v, 0.78));
         d.ht(Ink::Pink, brown * 0.55, &outline_of(v, 0.5));
@@ -123,11 +119,7 @@ pub fn loaf_top(d: &mut DrawList, v: &LoafView) {
         if matches!(v.recipe, Recipe::WholeWheat | Recipe::DarkRye) {
             for i in 0..70 {
                 let p = scatter(v.seed ^ 0x33, i, rx, ry);
-                d.fill(
-                    Ink::Key,
-                    0.75,
-                    &ellipse(p, 0.012, 0.007, hash01(v.seed, i) * PI),
-                );
+                d.fill(Ink::Key, 0.75, &ellipse(p, 0.012, 0.007, hash01(v.seed, i) * PI));
             }
         }
         // Banneton flour rings (survive the bake as faint lines).
@@ -140,13 +132,7 @@ pub fn loaf_top(d: &mut DrawList, v: &LoafView) {
         if let Some(inc) = v.recipe.inclusion() {
             for i in 0..9 {
                 let p = scatter(v.seed ^ 0x77, i, rx * 0.85, ry * 0.85);
-                inclusion_bit(
-                    d,
-                    inc,
-                    p,
-                    0.05 + 0.02 * hash01(v.seed, i + 40),
-                    hash01(v.seed, i + 90) * PI,
-                );
+                inclusion_bit(d, inc, p, 0.05 + 0.02 * hash01(v.seed, i + 40), hash01(v.seed, i + 90) * PI);
             }
         }
     });
@@ -196,10 +182,7 @@ pub fn loaf_top(d: &mut DrawList, v: &LoafView) {
         };
         for i in 0..n {
             let p = scatter(v.seed ^ 0x51, i, rx * 0.93, ry * 0.93);
-            if v.cuts
-                .iter()
-                .any(|c| crate::geom::dist_to_polyline(p, &c.pts) < 0.09 * b.max(0.3))
-            {
+            if v.cuts.iter().any(|c| crate::geom::dist_to_polyline(p, &c.pts) < 0.09 * b.max(0.3)) {
                 continue;
             }
             let a = hash01(v.seed ^ 0x9, i) * PI;
@@ -277,24 +260,19 @@ pub fn crumb_slice(d: &mut DrawList, w: f32, h: f32, openness: f32, crust: f32, 
     outline.push(v2(-w * 0.5, h * 0.12));
     let outline = chaikin(&outline, 2, true);
     shadow(d, v2(0.0, h * 0.26), w * 0.5, h * 0.07);
+    d.backing(&outline);
     d.fill(Ink::Yellow, 0.95, &outline);
     d.ht(Ink::Pink, 0.25 + 0.5 * crust, &outline);
     if crust > 0.5 {
         d.ht(Ink::Key, (crust - 0.5) * 0.5, &outline);
     }
-    let inner: Vec<V2> = outline
-        .iter()
-        .map(|p| v2(p.x * 0.9, p.y * 0.86 + h * 0.012))
-        .collect();
+    let inner: Vec<V2> = outline.iter().map(|p| v2(p.x * 0.9, p.y * 0.86 + h * 0.012)).collect();
     d.knock(&inner);
     d.fill(Ink::Yellow, 0.3, &inner);
     d.clipped(&inner, |d| {
         let n = (18.0 + 40.0 * openness) as u32;
         for i in 0..n {
-            let p = v2(
-                (hash01(seed, i * 3) - 0.5) * w * 0.85,
-                -h * 0.7 + hash01(seed, i * 3 + 1) * h * 0.85,
-            );
+            let p = v2((hash01(seed, i * 3) - 0.5) * w * 0.85, -h * 0.7 + hash01(seed, i * 3 + 1) * h * 0.85);
             let big = hash01(seed, i * 3 + 2).powf(2.5);
             let r = (2.0 + big * 14.0 * (0.3 + openness)) * (w / 220.0);
             let hole = ellipse(p, r * 1.2, r, hash01(seed, i) * 0.8 - 0.4);
@@ -302,11 +280,7 @@ pub fn crumb_slice(d: &mut DrawList, w: f32, h: f32, openness: f32, crust: f32, 
                 continue;
             }
             d.knock(&hole);
-            d.ht(
-                Ink::Yellow,
-                0.45,
-                &ellipse(p + v2(0.0, -r * 0.35), r * 1.1, r * 0.55, 0.0),
-            );
+            d.ht(Ink::Yellow, 0.45, &ellipse(p + v2(0.0, -r * 0.35), r * 1.1, r * 0.55, 0.0));
             d.stroke_p(Paint::solid(Ink::Key, 0.45), 1.0, &hole, true);
         }
     });

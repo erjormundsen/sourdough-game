@@ -86,10 +86,7 @@ pub const PROFILES: [Profile; 8] = [
             "Hello! I brought my basket!",
         ],
         critic: false,
-        gifts: [
-            Unlock::Stencil(Stencil::Bunny),
-            Unlock::Topping(Topping::Poppy),
-        ],
+        gifts: [Unlock::Stencil(Stencil::Bunny), Unlock::Topping(Topping::Poppy)],
     },
     Profile {
         species: Species::Bear,
@@ -143,10 +140,7 @@ pub const PROFILES: [Profile; 8] = [
             "One loaf. Exquisite, if you please.",
         ],
         critic: true,
-        gifts: [
-            Unlock::Pattern(Pattern::Wheat),
-            Unlock::Pattern(Pattern::Leaf),
-        ],
+        gifts: [Unlock::Pattern(Pattern::Wheat), Unlock::Pattern(Pattern::Leaf)],
     },
     Profile {
         species: Species::Hedgehog,
@@ -164,10 +158,7 @@ pub const PROFILES: [Profile; 8] = [
             "Wholesome and crunchy, please!",
         ],
         critic: false,
-        gifts: [
-            Unlock::Stencil(Stencil::Star),
-            Unlock::Recipe(Recipe::WholeWheat),
-        ],
+        gifts: [Unlock::Stencil(Stencil::Star), Unlock::Recipe(Recipe::WholeWheat)],
     },
     Profile {
         species: Species::Frog,
@@ -178,11 +169,7 @@ pub const PROFILES: [Profile; 8] = [
             (Want::Recipe(Recipe::Olive), 2),
             (Want::Tangy, 1),
         ],
-        hello: &[
-            "Ribbit! Surprise me!",
-            "Something I've never had!",
-            "I'm feeling adventurous today!",
-        ],
+        hello: &["Ribbit! Surprise me!", "Something I've never had!", "I'm feeling adventurous today!"],
         critic: false,
         gifts: [Unlock::Stencil(Stencil::Sun), Unlock::Recipe(Recipe::Olive)],
     },
@@ -202,10 +189,7 @@ pub const PROFILES: [Profile; 8] = [
             "Mild and fluffy, like me!",
         ],
         critic: false,
-        gifts: [
-            Unlock::Recipe(Recipe::Cheddar),
-            Unlock::Treat(Treat::Muffin),
-        ],
+        gifts: [Unlock::Recipe(Recipe::Cheddar), Unlock::Treat(Treat::Muffin)],
     },
     Profile {
         species: Species::Otter,
@@ -223,10 +207,7 @@ pub const PROFILES: [Profile; 8] = [
             "I'll float home with a treat.",
         ],
         critic: false,
-        gifts: [
-            Unlock::Treat(Treat::Bagel),
-            Unlock::Recipe(Recipe::CranberryWalnut),
-        ],
+        gifts: [Unlock::Treat(Treat::Bagel), Unlock::Recipe(Recipe::CranberryWalnut)],
     },
 ];
 
@@ -241,11 +222,7 @@ pub struct Order {
 
 impl Order {
     pub fn label(&self) -> String {
-        self.wants
-            .iter()
-            .map(|w| w.label())
-            .collect::<Vec<_>>()
-            .join(" + ")
+        self.wants.iter().map(|w| w.label()).collect::<Vec<_>>().join(" + ")
     }
 }
 
@@ -253,11 +230,7 @@ impl Order {
 pub fn make_order(s: Species, rng: &mut Rng, can: impl Fn(&Want) -> bool, day: u32) -> Order {
     let p = profile(s);
     let options: Vec<(Want, u32)> = p.likes.iter().copied().filter(|(w, _)| can(w)).collect();
-    let n = if p.critic || (day >= 6 && rng.chance(0.35)) {
-        2
-    } else {
-        1
-    };
+    let n = if p.critic || (day >= 6 && rng.chance(0.35)) { 2 } else { 1 };
     let mut wants = Vec::new();
     let mut pool = options;
     for _ in 0..n {
@@ -301,10 +274,7 @@ pub enum Reaction {
 /// Loaf signature used for "surprise me".
 pub fn signature(g: &Good) -> String {
     match g {
-        Good::Loaf(l) => format!(
-            "{:?}/{:?}/{:?}/{:?}",
-            l.recipe, l.pattern, l.stencil, l.topping
-        ),
+        Good::Loaf(l) => format!("{:?}/{:?}/{:?}/{:?}", l.recipe, l.pattern, l.stencil, l.topping),
         Good::Treat(t) => format!("{:?}", t.kind),
     }
 }
@@ -384,12 +354,7 @@ pub fn want_score(w: &Want, good: &Good, history: &[String]) -> f32 {
 /// Overall satisfaction 0..1: mostly the order, a little the quality.
 pub fn satisfaction(order: &Order, good: &Good, history: &[String]) -> f32 {
     let n = order.wants.len().max(1) as f32;
-    let fit: f32 = order
-        .wants
-        .iter()
-        .map(|w| want_score(w, good, history))
-        .sum::<f32>()
-        / n;
+    let fit: f32 = order.wants.iter().map(|w| want_score(w, good, history)).sum::<f32>() / n;
     (0.72 * fit + 0.28 * good.quality()).clamp(0.0, 1.0)
 }
 
@@ -452,14 +417,10 @@ mod tests {
     #[test]
     fn matching_order_is_loved_and_always_pays() {
         let g = Good::Loaf(loaf());
-        let o = Order {
-            wants: vec![Want::Crust(CrustLevel::Bold)],
-        };
+        let o = Order { wants: vec![Want::Crust(CrustLevel::Bold)] };
         let s = satisfaction(&o, &g, &[]);
         assert_eq!(reaction_for(s), Reaction::Love);
-        let wrong = Order {
-            wants: vec![Want::Treat(Treat::Bagel)],
-        };
+        let wrong = Order { wants: vec![Want::Treat(Treat::Bagel)] };
         let s2 = satisfaction(&wrong, &g, &[]);
         assert!(s2 < 0.55);
         let (coins, _) = payment(&g, s2, false, false);
@@ -472,11 +433,7 @@ mod tests {
         let new = want_score(&Want::Surprise, &g, &[]);
         let old = want_score(&Want::Surprise, &g, &[signature(&g)]);
         assert!(new > old);
-        let t = Good::Treat(TreatItem {
-            kind: Treat::Bagel,
-            quality: 0.8,
-            seed: 1,
-        });
+        let t = Good::Treat(TreatItem { kind: Treat::Bagel, quality: 0.8, seed: 1 });
         assert_eq!(want_score(&Want::Treat(Treat::Bagel), &t, &[]), 1.0);
     }
 

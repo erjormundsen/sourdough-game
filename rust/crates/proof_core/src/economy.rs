@@ -70,11 +70,7 @@ pub struct CatalogItem {
 }
 
 const fn item(unlock: Unlock, cost: u32, level: u32) -> CatalogItem {
-    CatalogItem {
-        unlock,
-        cost,
-        level,
-    }
+    CatalogItem { unlock, cost, level }
 }
 
 pub const CATALOG: [CatalogItem; 21] = [
@@ -105,19 +101,13 @@ pub const CATALOG: [CatalogItem; 21] = [
 pub const LEVELS: [u32; 8] = [0, 24, 70, 135, 220, 320, 440, 580];
 
 pub fn level_for(xp: u32) -> u32 {
-    LEVELS
-        .iter()
-        .rposition(|&t| xp >= t)
-        .map(|i| i as u32 + 1)
-        .unwrap_or(1)
+    LEVELS.iter().rposition(|&t| xp >= t).map(|i| i as u32 + 1).unwrap_or(1)
 }
 
 /// XP remaining to the next level (None at max).
 pub fn xp_to_next(xp: u32) -> Option<(u32, u32)> {
     let lvl = level_for(xp) as usize;
-    LEVELS
-        .get(lvl)
-        .map(|&next| (xp - LEVELS[lvl - 1], next - LEVELS[lvl - 1]))
+    LEVELS.get(lvl).map(|&next| (xp - LEVELS[lvl - 1], next - LEVELS[lvl - 1]))
 }
 
 /// Customers join the regulars as the bakery grows.
@@ -154,12 +144,7 @@ mod tests {
     fn every_content_item_is_reachable() {
         use std::collections::HashSet;
         let mut all: HashSet<Unlock> = STARTING.iter().copied().collect();
-        all.extend(
-            CATALOG
-                .iter()
-                .filter(|c| c.level <= LEVELS.len() as u32)
-                .map(|c| c.unlock),
-        );
+        all.extend(CATALOG.iter().filter(|c| c.level <= LEVELS.len() as u32).map(|c| c.unlock));
         for r in Recipe::ALL {
             assert!(all.contains(&Unlock::Recipe(r)), "{r:?}");
         }

@@ -1,19 +1,15 @@
+//! Proof's Godot bridge. The engine only sees one class, [`game::Game`]; everything the
+//! player sees is printed from Rust (proof_core art → proof_raster plates → riso shader).
+
 use godot::prelude::*;
+
+mod game;
+mod riso;
+mod screens;
+mod sfx;
+mod ui;
 
 struct ProofExtension;
 
 #[gdextension]
 unsafe impl ExtensionLibrary for ProofExtension {}
-
-#[derive(GodotClass)]
-#[class(base=Node, init)]
-struct Hello {
-    base: Base<Node>,
-}
-
-#[godot_api]
-impl INode for Hello {
-    fn ready(&mut self) {
-        godot_print!("proof extension alive");
-    }
-}

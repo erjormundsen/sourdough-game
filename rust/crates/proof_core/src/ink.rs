@@ -29,18 +29,10 @@ pub struct Rgb(pub f32, pub f32, pub f32);
 
 impl Rgb {
     pub const fn hex(h: u32) -> Rgb {
-        Rgb(
-            ((h >> 16) & 0xff) as f32 / 255.0,
-            ((h >> 8) & 0xff) as f32 / 255.0,
-            (h & 0xff) as f32 / 255.0,
-        )
+        Rgb(((h >> 16) & 0xff) as f32 / 255.0, ((h >> 8) & 0xff) as f32 / 255.0, (h & 0xff) as f32 / 255.0)
     }
     pub fn lerp(self, o: Rgb, t: f32) -> Rgb {
-        Rgb(
-            self.0 + (o.0 - self.0) * t,
-            self.1 + (o.1 - self.1) * t,
-            self.2 + (o.2 - self.2) * t,
-        )
+        Rgb(self.0 + (o.0 - self.0) * t, self.1 + (o.1 - self.1) * t, self.2 + (o.2 - self.2) * t)
     }
     pub fn times(self, o: Rgb) -> Rgb {
         Rgb(self.0 * o.0, self.1 * o.1, self.2 * o.2)
@@ -75,32 +67,17 @@ impl Edition {
             // Morning bake: coral-pink, sunflower, aqua, warm brown key.
             Edition::Dawn => Palette {
                 paper: Rgb::hex(0xFBF3E6),
-                inks: [
-                    Rgb::hex(0xFF6F91),
-                    Rgb::hex(0xFFD23F),
-                    Rgb::hex(0x62C6E0),
-                    Rgb::hex(0x6B3F35),
-                ],
+                inks: [Rgb::hex(0xFF6F91), Rgb::hex(0xFFD23F), Rgb::hex(0x62C6E0), Rgb::hex(0x6B3F35)],
             },
             // Shop day: fluorescent pink, yellow, riso blue, navy key.
             Edition::Daylight => Palette {
                 paper: Rgb::hex(0xF8F2E6),
-                inks: [
-                    Rgb::hex(0xFF5DAE),
-                    Rgb::hex(0xFFE24A),
-                    Rgb::hex(0x3E8FD0),
-                    Rgb::hex(0x2E3A6B),
-                ],
+                inks: [Rgb::hex(0xFF5DAE), Rgb::hex(0xFFE24A), Rgb::hex(0x3E8FD0), Rgb::hex(0x2E3A6B)],
             },
             // Evening prep: berry pink, lamp-light sunflower, violet-blue, plum key.
             Edition::Dusk => Palette {
                 paper: Rgb::hex(0xF1E6D6),
-                inks: [
-                    Rgb::hex(0xF0609E),
-                    Rgb::hex(0xF9BE4B),
-                    Rgb::hex(0x6A6CC4),
-                    Rgb::hex(0x33264F),
-                ],
+                inks: [Rgb::hex(0xF0609E), Rgb::hex(0xF9BE4B), Rgb::hex(0x6A6CC4), Rgb::hex(0x33264F)],
             },
         }
     }

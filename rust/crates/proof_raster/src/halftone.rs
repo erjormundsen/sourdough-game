@@ -69,26 +69,13 @@ impl TileCache {
 
     /// Pattern shader for `tone` with cells of `pitch_px` device pixels at `angle`,
     /// anchored to reference-space origin so neighbouring sprites share a screen.
-    pub fn pattern(
-        &mut self,
-        tone: f32,
-        pitch_px: f32,
-        angle: f32,
-        ox: f32,
-        oy: f32,
-    ) -> Shader<'_> {
+    pub fn pattern(&mut self, tone: f32, pitch_px: f32, angle: f32, ox: f32, oy: f32) -> Shader<'_> {
         let level = (tone * LEVELS).round().clamp(1.0, LEVELS - 1.0) as u32;
         let k = pitch_px / TILE as f32;
         let ts = Transform::from_translate(-ox, -oy)
             .pre_concat(Transform::from_rotate(angle.to_degrees()))
             .pre_concat(Transform::from_scale(k, k));
         let tile = self.tile(level);
-        Pattern::new(
-            tile.as_ref(),
-            SpreadMode::Repeat,
-            FilterQuality::Bilinear,
-            1.0,
-            ts,
-        )
+        Pattern::new(tile.as_ref(), SpreadMode::Repeat, FilterQuality::Bilinear, 1.0, ts)
     }
 }

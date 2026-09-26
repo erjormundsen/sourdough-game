@@ -52,11 +52,7 @@ fn level_y(rise: f32) -> f32 {
 /// A Yeastie: round pink blob with a tiny face.
 pub fn yeastie(d: &mut DrawList, c: V2, r: f32) {
     d.fill(Ink::Pink, 0.95, &circle(c, r));
-    d.fill(
-        Ink::Key,
-        1.0,
-        &circle(c + v2(-r * 0.32, -r * 0.1), r * 0.16),
-    );
+    d.fill(Ink::Key, 1.0, &circle(c + v2(-r * 0.32, -r * 0.1), r * 0.16));
     d.fill(Ink::Key, 1.0, &circle(c + v2(r * 0.32, -r * 0.1), r * 0.16));
 }
 
@@ -66,11 +62,7 @@ pub fn lacto(d: &mut DrawList, c: V2, r: f32, ang: f32) {
     d.fill(Ink::Blue, 0.9, &capsule(c - dir, c + dir, r * 0.72));
     let n = V2::from_angle(ang).perp();
     let _ = n;
-    d.fill(
-        Ink::Key,
-        1.0,
-        &circle(c + v2(-r * 0.3, -r * 0.12), r * 0.15),
-    );
+    d.fill(Ink::Key, 1.0, &circle(c + v2(-r * 0.3, -r * 0.12), r * 0.15));
     d.fill(Ink::Key, 1.0, &circle(c + v2(r * 0.3, -r * 0.12), r * 0.15));
 }
 
@@ -85,10 +77,11 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
 
     shadow(d, v2(0.0, 4.0), 104.0, 16.0);
 
-    // Glass.
+    // Glass (opaque paper behind so the jar never looks see-through).
+    d.backing(&neck);
     d.fill(Ink::Blue, 0.13, &neck);
     d.outline(Ink::Key, LINE, &neck);
-    d.knock_p(1.0, Screen::Solid, 1 << 3, &body);
+    d.backing(&body);
     d.fill(Ink::Blue, 0.13, &body);
 
     // Starter inside the glass.
@@ -106,11 +99,7 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
         d.fill(Ink::Yellow, 0.42, &goop);
         d.knock_p(1.0, Screen::Solid, 1 << 2, &goop);
         // A slightly deeper band at the bottom: the starter settles.
-        d.ht_add(
-            Ink::Yellow,
-            0.35,
-            &rounded_rect(rect(-90.0, -34.0, 180.0, 40.0), 10.0),
-        );
+        d.ht_add(Ink::Yellow, 0.35, &rounded_rect(rect(-90.0, -34.0, 180.0, 40.0), 10.0));
 
         // Bubbles.
         let bubbles = (4.0 + 18.0 * v.pep) as u32;
@@ -123,12 +112,7 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
             let r = 1.8 + 4.5 * hr * hr * (0.5 + v.pep);
             d.knock_color(&circle(v2(x, y), r));
             if r > 3.5 {
-                d.stroke_p(
-                    crate::draw::Paint::solid(Ink::Key, 0.55),
-                    1.2,
-                    &circle(v2(x, y), r),
-                    true,
-                );
+                d.stroke_p(crate::draw::Paint::solid(Ink::Key, 0.55), 1.2, &circle(v2(x, y), r), true);
             }
         }
 
@@ -167,56 +151,28 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
     });
 
     // Glass shine.
-    d.knock_p(
-        0.85,
-        Screen::Solid,
-        0b0111,
-        &capsule(v2(-61.0, -172.0), v2(-61.0, -92.0), 5.5),
-    );
+    d.knock_p(0.85, Screen::Solid, 0b0111, &capsule(v2(-61.0, -172.0), v2(-61.0, -92.0), 5.5));
     d.knock_p(0.85, Screen::Solid, 0b0111, &circle(v2(-61.0, -76.0), 4.2));
 
     d.outline(Ink::Key, LINE + 0.5, &body);
 
     // Rubber band: marks the level right after the last feed.
     let yb = level_y(v.band);
-    d.line(
-        Ink::Pink,
-        7.0,
-        &quad_bezier(
-            v2(-86.0, yb - 2.0),
-            v2(0.0, yb + 9.0),
-            v2(86.0, yb - 2.0),
-            16,
-        ),
-    );
+    d.line(Ink::Pink, 7.0, &quad_bezier(v2(-86.0, yb - 2.0), v2(0.0, yb + 9.0), v2(86.0, yb - 2.0), 16));
 
     // Gingham cloth cap + string bow.
     let cloth = {
         let mut p = vec![v2(-72.0, -250.0), v2(72.0, -250.0)];
-        p.extend(quad_bezier(
-            v2(84.0, -234.0),
-            v2(92.0, -214.0),
-            v2(78.0, -206.0),
-            6,
-        ));
+        p.extend(quad_bezier(v2(84.0, -234.0), v2(92.0, -214.0), v2(78.0, -206.0), 6));
         p.extend(zigzag(v2(78.0, -206.0), v2(-78.0, -206.0), 7, -5.0));
-        p.extend(quad_bezier(
-            v2(-78.0, -206.0),
-            v2(-92.0, -214.0),
-            v2(-84.0, -234.0),
-            6,
-        ));
+        p.extend(quad_bezier(v2(-78.0, -206.0), v2(-92.0, -214.0), v2(-84.0, -234.0), 6));
         crate::geom::chaikin(&p, 2, true)
     };
-    d.knock(&cloth);
+    d.backing(&cloth);
     d.clipped(&cloth, |d| {
         for i in -5..=5 {
             let x = i as f32 * 22.0;
-            d.fill(
-                v.cloth,
-                0.42,
-                &crate::geom::rect_poly(rect(x - 5.5, -260.0, 11.0, 60.0)),
-            );
+            d.fill(v.cloth, 0.42, &crate::geom::rect_poly(rect(x - 5.5, -260.0, 11.0, 60.0)));
         }
         for j in 0..4 {
             let y = -252.0 + j as f32 * 22.0;
@@ -227,11 +183,7 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
         }
     });
     d.outline(Ink::Key, LINE, &cloth);
-    d.line(
-        Ink::Key,
-        3.2,
-        &quad_bezier(v2(-66.0, -214.0), v2(0.0, -208.0), v2(66.0, -214.0), 10),
-    );
+    d.line(Ink::Key, 3.2, &quad_bezier(v2(-66.0, -214.0), v2(0.0, -208.0), v2(66.0, -214.0), 10));
     let bow = v2(40.0, -212.0);
     d.outline(Ink::Key, 3.0, &ellipse(bow + v2(-9.0, -5.0), 9.0, 5.5, 0.5));
     d.outline(Ink::Key, 3.0, &ellipse(bow + v2(9.0, -5.0), 9.0, 5.5, -0.5));

@@ -37,15 +37,7 @@ impl Dough {
             bake: 0.0,
             spring: 0.0,
             crust: 0.0,
-            cuts: self
-                .cuts
-                .iter()
-                .map(|pts| CutView {
-                    pts: pts.clone(),
-                    bloom: 0.0,
-                    ear: 0.0,
-                })
-                .collect(),
+            cuts: self.cuts.iter().map(|pts| CutView { pts: pts.clone(), bloom: 0.0, ear: 0.0 }).collect(),
             stencil: self.stencil,
             topping: self.topping,
             seed: self.seed,
@@ -127,11 +119,7 @@ impl Loaf {
         CrustLevel::of(self.crust)
     }
     pub fn big_ear(&self) -> f32 {
-        let ear = self
-            .cuts
-            .iter()
-            .map(|c| c.ear * c.bloom)
-            .fold(0.0, f32::max);
+        let ear = self.cuts.iter().map(|c| c.ear * c.bloom).fold(0.0, f32::max);
         (self.spring * 0.5 + ear * 0.7).clamp(0.0, 1.0)
     }
     pub fn view(&self, r: f32) -> LoafView {
@@ -145,11 +133,7 @@ impl Loaf {
             cuts: self
                 .cuts
                 .iter()
-                .map(|c| CutView {
-                    pts: c.pts.clone(),
-                    bloom: c.bloom,
-                    ear: c.ear,
-                })
+                .map(|c| CutView { pts: c.pts.clone(), bloom: c.bloom, ear: c.ear })
                 .collect(),
             stencil: self.stencil,
             topping: self.topping,
@@ -205,12 +189,10 @@ impl Good {
 /// Bake a (dressed & scored) dough. `crust` is where the player pulled it (0..1),
 /// `lid` is the Dutch-oven upgrade (more steam → more spring).
 pub fn bake(dough: &Dough, crust: f32, lid: bool, day: u32) -> Loaf {
-    let report = dough
-        .score
-        .clone()
-        .unwrap_or_else(|| scoring::evaluate(&dough.cuts, dough.shape, dough.guide));
-    let spring = (0.18 + 0.52 * dough.strength + 0.22 * dough.fold + if lid { 0.12 } else { 0.0 })
-        .clamp(0.0, 1.0);
+    let report =
+        dough.score.clone().unwrap_or_else(|| scoring::evaluate(&dough.cuts, dough.shape, dough.guide));
+    let spring =
+        (0.18 + 0.52 * dough.strength + 0.22 * dough.fold + if lid { 0.12 } else { 0.0 }).clamp(0.0, 1.0);
     let n = dough.cuts.len().max(1) as f32;
     let cuts: Vec<Cut> = dough
         .cuts
@@ -221,13 +203,8 @@ pub fn bake(dough: &Dough, crust: f32, lid: bool, day: u32) -> Loaf {
             // Long confident cuts open wide and lift an ear; many small cuts share the spring.
             let share = (1.6 / n).clamp(0.45, 1.0);
             let bloom = (spring * (0.55 + 0.45 * clean) * (0.6 + 0.4 * share)).clamp(0.15, 1.0);
-            let ear = (clean * (len / 1.2).clamp(0.0, 1.0) * share * (0.4 + 0.6 * spring))
-                .clamp(0.0, 1.0);
-            Cut {
-                pts: pts.clone(),
-                bloom,
-                ear,
-            }
+            let ear = (clean * (len / 1.2).clamp(0.0, 1.0) * share * (0.4 + 0.6 * spring)).clamp(0.0, 1.0);
+            Cut { pts: pts.clone(), bloom, ear }
         })
         .collect();
     let crust = crust.clamp(0.0, 1.0);
@@ -237,16 +214,10 @@ pub fn bake(dough: &Dough, crust: f32, lid: bool, day: u32) -> Loaf {
     let looks = if cuts.is_empty() {
         0.35 + if dough.stencil.is_some() { 0.25 } else { 0.0 }
     } else {
-        (report.looks
-            + if dough.stencil.is_some() || dough.topping.is_some() {
-                0.08
-            } else {
-                0.0
-            })
-        .min(1.0)
+        (report.looks + if dough.stencil.is_some() || dough.topping.is_some() { 0.08 } else { 0.0 }).min(1.0)
     };
-    let quality = (0.38 * spring + 0.4 * looks + 0.22 * bake_ok.clamp(0.0, 1.0) - unscored_penalty)
-        .clamp(0.0, 1.0);
+    let quality =
+        (0.38 * spring + 0.4 * looks + 0.22 * bake_ok.clamp(0.0, 1.0) - unscored_penalty).clamp(0.0, 1.0);
     let stars = if quality >= 0.74 {
         3
     } else if quality >= 0.5 {

@@ -8,6 +8,49 @@ use crate::ink::Ink;
 use crate::rng::hash01;
 use std::f32::consts::TAU;
 
+/// An unfinished treat on the tray (before the finishing swipe).
+pub fn treat_raw(d: &mut DrawList, t: Treat, s: f32, seed: u32) {
+    shadow(d, v2(0.0, s * 0.38), s * 0.5, s * 0.09);
+    match t {
+        Treat::Muffin => {
+            let cup = vec![
+                v2(-s * 0.36, -s * 0.05),
+                v2(s * 0.36, -s * 0.05),
+                v2(s * 0.28, s * 0.38),
+                v2(-s * 0.28, s * 0.38),
+            ];
+            let batter = crate::geom::blob(v2(0.0, -s * 0.06), s * 0.36, s * 0.1, 0.05, seed);
+            d.fill(Ink::Yellow, 0.35, &batter);
+            d.outline(Ink::Key, LINE - 1.5, &batter);
+            d.backing(&cup);
+            d.fill(Ink::Pink, 0.55, &cup);
+            d.outline(Ink::Key, LINE - 1.0, &cup);
+        }
+        Treat::CinnamonBun => {
+            let body = crate::geom::blob(V2::ZERO, s * 0.44, s * 0.38, 0.04, seed);
+            d.backing(&body);
+            d.fill(Ink::Yellow, 0.3, &body);
+            let spiral: Vec<V2> = (0..90)
+                .map(|i| {
+                    let t = i as f32 / 90.0;
+                    let p = V2::from_angle(t * TAU * 2.6) * (s * 0.38 * t);
+                    v2(p.x, p.y * 0.88)
+                })
+                .collect();
+            d.stroke_p(Paint::ht(Ink::Pink, 0.5), s * 0.05, &spiral, false);
+            d.outline(Ink::Key, LINE - 1.0, &body);
+        }
+        Treat::Bagel => {
+            let outer = crate::geom::blob(V2::ZERO, s * 0.44, s * 0.38, 0.03, seed);
+            let hole = ellipse(v2(0.0, -s * 0.02), s * 0.11, s * 0.08, 0.0);
+            d.backing(&outer);
+            d.fill_eo(Paint::solid(Ink::Yellow, 0.3), &[outer.clone(), hole.clone()]);
+            d.outline(Ink::Key, LINE - 1.0, &outer);
+            d.outline(Ink::Key, LINE - 1.5, &hole);
+        }
+    }
+}
+
 /// Draw one treat centred at the origin, roughly `s` wide. `seed` varies toppings.
 pub fn treat(d: &mut DrawList, t: Treat, s: f32, seed: u32) {
     shadow(d, v2(0.0, s * 0.38), s * 0.5, s * 0.09);
@@ -25,6 +68,7 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32) {
         v2(s * 0.28, s * 0.38),
         v2(-s * 0.28, s * 0.38),
     ];
+    d.backing(&cup);
     d.fill(Ink::Pink, 0.55, &cup);
     for i in 0..7 {
         let x = -s * 0.3 + i as f32 * s * 0.1;
@@ -42,13 +86,11 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32) {
         3,
         true,
     );
+    d.backing(&top);
     d.fill(Ink::Yellow, 0.9, &top);
     d.ht(Ink::Pink, 0.4, &top);
     for i in 0..9 {
-        let p = v2(
-            (hash01(seed, i) - 0.5) * s * 0.6,
-            -s * 0.05 - hash01(seed, i + 20) * s * 0.3,
-        );
+        let p = v2((hash01(seed, i) - 0.5) * s * 0.6, -s * 0.05 - hash01(seed, i + 20) * s * 0.3);
         d.fill(Ink::Blue, 0.9, &circle(p, s * 0.035));
         d.fill(Ink::Pink, 0.6, &circle(p, s * 0.035));
     }
@@ -57,6 +99,7 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32) {
 
 fn bun(d: &mut DrawList, s: f32, seed: u32) {
     let body = crate::geom::blob(V2::ZERO, s * 0.46, s * 0.4, 0.04, seed);
+    d.backing(&body);
     d.fill(Ink::Yellow, 0.9, &body);
     d.ht(Ink::Pink, 0.45, &body);
     let spiral: Vec<V2> = (0..90)
@@ -85,10 +128,8 @@ fn bun(d: &mut DrawList, s: f32, seed: u32) {
 fn bagel(d: &mut DrawList, s: f32, seed: u32) {
     let outer = crate::geom::blob(V2::ZERO, s * 0.46, s * 0.4, 0.03, seed);
     let hole = ellipse(v2(0.0, -s * 0.02), s * 0.11, s * 0.08, 0.0);
-    d.fill_eo(
-        Paint::solid(Ink::Yellow, 0.95),
-        &[outer.clone(), hole.clone()],
-    );
+    d.backing(&outer);
+    d.fill_eo(Paint::solid(Ink::Yellow, 0.95), &[outer.clone(), hole.clone()]);
     d.fill_eo(Paint::ht(Ink::Pink, 0.55), &[outer.clone(), hole.clone()]);
     d.fill_eo(Paint::ht(Ink::Key, 0.12), &[outer.clone(), hole.clone()]);
     for i in 0..26 {

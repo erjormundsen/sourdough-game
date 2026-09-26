@@ -161,46 +161,26 @@ impl Default for Xf {
 }
 
 impl Xf {
-    pub const IDENTITY: Xf = Xf {
-        pos: V2::ZERO,
-        scale: v2(1.0, 1.0),
-        rot: 0.0,
-    };
+    pub const IDENTITY: Xf = Xf { pos: V2::ZERO, scale: v2(1.0, 1.0), rot: 0.0 };
 
     pub fn at(pos: V2) -> Xf {
-        Xf {
-            pos,
-            ..Xf::IDENTITY
-        }
+        Xf { pos, ..Xf::IDENTITY }
     }
     pub fn scaled(self, s: f32) -> Xf {
-        Xf {
-            scale: self.scale * s,
-            ..self
-        }
+        Xf { scale: self.scale * s, ..self }
     }
     pub fn scaled_xy(self, sx: f32, sy: f32) -> Xf {
-        Xf {
-            scale: self.scale.mul_v(v2(sx, sy)),
-            ..self
-        }
+        Xf { scale: self.scale.mul_v(v2(sx, sy)), ..self }
     }
     pub fn rotated(self, r: f32) -> Xf {
-        Xf {
-            rot: self.rot + r,
-            ..self
-        }
+        Xf { rot: self.rot + r, ..self }
     }
     pub fn apply(&self, p: V2) -> V2 {
         p.mul_v(self.scale).rotate(self.rot) + self.pos
     }
     /// Compose: `self` applied after `inner`.
     pub fn then(&self, inner: &Xf) -> Xf {
-        Xf {
-            pos: self.apply(inner.pos),
-            scale: self.scale.mul_v(inner.scale),
-            rot: self.rot + inner.rot,
-        }
+        Xf { pos: self.apply(inner.pos), scale: self.scale.mul_v(inner.scale), rot: self.rot + inner.rot }
     }
     /// Uniform-ish scale used for stroke widths.
     pub fn width_scale(&self) -> f32 {
@@ -322,10 +302,7 @@ pub fn dist_to_polyline(p: V2, pts: &[V2]) -> f32 {
     match pts.len() {
         0 => f32::INFINITY,
         1 => p.dist(pts[0]),
-        _ => pts
-            .windows(2)
-            .map(|w| dist_to_segment(p, w[0], w[1]))
-            .fold(f32::INFINITY, f32::min),
+        _ => pts.windows(2).map(|w| dist_to_segment(p, w[0], w[1])).fold(f32::INFINITY, f32::min),
     }
 }
 
@@ -353,12 +330,8 @@ pub fn circle(c: V2, r: f32) -> Vec<V2> {
 
 /// Arc from angle `a0` to `a1` (radians, y-down so positive is clockwise on screen).
 pub fn arc(c: V2, r: f32, a0: f32, a1: f32) -> Vec<V2> {
-    let n = ((seg_count(r) as f32) * ((a1 - a0).abs() / TAU))
-        .ceil()
-        .max(4.0) as usize;
-    (0..=n)
-        .map(|i| c + V2::from_angle(a0 + (a1 - a0) * i as f32 / n as f32) * r)
-        .collect()
+    let n = ((seg_count(r) as f32) * ((a1 - a0).abs() / TAU)).ceil().max(4.0) as usize;
+    (0..=n).map(|i| c + V2::from_angle(a0 + (a1 - a0) * i as f32 / n as f32) * r).collect()
 }
 
 pub fn rounded_rect(r: Rect, radius: f32) -> Vec<V2> {
@@ -382,12 +355,7 @@ pub fn rounded_rect(r: Rect, radius: f32) -> Vec<V2> {
 }
 
 pub fn rect_poly(r: Rect) -> Vec<V2> {
-    vec![
-        v2(r.x, r.y),
-        v2(r.x + r.w, r.y),
-        v2(r.x + r.w, r.y + r.h),
-        v2(r.x, r.y + r.h),
-    ]
+    vec![v2(r.x, r.y), v2(r.x + r.w, r.y), v2(r.x + r.w, r.y + r.h), v2(r.x, r.y + r.h)]
 }
 
 /// Squircle-ish soft blob: circle with a few low-frequency harmonics (deterministic by `seed`).
@@ -402,9 +370,7 @@ pub fn blob(c: V2, rx: f32, ry: f32, wobble: f32, seed: u32) -> Vec<V2> {
             let a = TAU * i as f32 / n as f32;
             let k = 1.0
                 + wobble
-                    * (0.5 * (2.0 * a + p1).sin()
-                        + 0.3 * (3.0 * a + p2).sin()
-                        + 0.2 * (5.0 * a + p3).sin());
+                    * (0.5 * (2.0 * a + p1).sin() + 0.3 * (3.0 * a + p2).sin() + 0.2 * (5.0 * a + p3).sin());
             c + v2(a.cos() * rx * k, a.sin() * ry * k)
         })
         .collect()
@@ -434,8 +400,7 @@ pub fn heart(c: V2, size: f32) -> Vec<V2> {
         .map(|i| {
             let t = TAU * i as f32 / n as f32;
             let x = 16.0 * t.sin().powi(3);
-            let y =
-                -(13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos());
+            let y = -(13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos());
             c + v2(x, y + 1.5) * (size / 34.0)
         })
         .collect()
@@ -509,10 +474,7 @@ pub fn transform(poly: &[V2], xf: &Xf) -> Vec<V2> {
 /// Signed area (positive = clockwise in y-down space).
 pub fn signed_area(poly: &[V2]) -> f32 {
     let n = poly.len();
-    (0..n)
-        .map(|i| poly[i].cross(poly[(i + 1) % n]))
-        .sum::<f32>()
-        * 0.5
+    (0..n).map(|i| poly[i].cross(poly[(i + 1) % n])).sum::<f32>() * 0.5
 }
 
 #[cfg(test)]

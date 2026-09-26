@@ -10,10 +10,7 @@ pub struct Rng {
 
 impl Rng {
     pub fn new(seed: u64) -> Self {
-        let mut r = Rng {
-            state: 0,
-            inc: (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) << 1) | 1,
-        };
+        let mut r = Rng { state: 0, inc: (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) << 1) | 1 };
         r.next_u32();
         r.state = r.state.wrapping_add(seed ^ 0x853C_49E6_748F_EA9B);
         r.next_u32();
@@ -22,9 +19,7 @@ impl Rng {
 
     pub fn next_u32(&mut self) -> u32 {
         let old = self.state;
-        self.state = old
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(self.inc);
+        self.state = old.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(self.inc);
         let xorshifted = (((old >> 18) ^ old) >> 27) as u32;
         let rot = (old >> 59) as u32;
         xorshifted.rotate_right(rot)
@@ -41,11 +36,7 @@ impl Rng {
 
     /// Uniform integer in [0, n).
     pub fn below(&mut self, n: u32) -> u32 {
-        if n == 0 {
-            0
-        } else {
-            ((self.next_u32() as u64 * n as u64) >> 32) as u32
-        }
+        if n == 0 { 0 } else { ((self.next_u32() as u64 * n as u64) >> 32) as u32 }
     }
 
     pub fn chance(&mut self, p: f32) -> bool {
@@ -53,11 +44,7 @@ impl Rng {
     }
 
     pub fn pick<'a, T>(&mut self, items: &'a [T]) -> Option<&'a T> {
-        if items.is_empty() {
-            None
-        } else {
-            items.get(self.below(items.len() as u32) as usize)
-        }
+        if items.is_empty() { None } else { items.get(self.below(items.len() as u32) as usize) }
     }
 
     pub fn shuffle<T>(&mut self, items: &mut [T]) {

@@ -38,34 +38,16 @@ pub struct Paint {
 
 impl Paint {
     pub fn solid(ink: Ink, tone: f32) -> Paint {
-        Paint {
-            ink,
-            tone,
-            screen: Screen::Solid,
-            mode: Mode::Over,
-        }
+        Paint { ink, tone, screen: Screen::Solid, mode: Mode::Over }
     }
     pub fn ht(ink: Ink, tone: f32) -> Paint {
-        Paint {
-            ink,
-            tone,
-            screen: Screen::Halftone,
-            mode: Mode::Over,
-        }
+        Paint { ink, tone, screen: Screen::Halftone, mode: Mode::Over }
     }
     pub fn coarse(ink: Ink, tone: f32) -> Paint {
-        Paint {
-            ink,
-            tone,
-            screen: Screen::Coarse,
-            mode: Mode::Over,
-        }
+        Paint { ink, tone, screen: Screen::Coarse, mode: Mode::Over }
     }
     pub fn add(self) -> Paint {
-        Paint {
-            mode: Mode::Add,
-            ..self
-        }
+        Paint { mode: Mode::Add, ..self }
     }
 }
 
@@ -76,24 +58,15 @@ pub enum Shape {
     /// Several closed polygons filled even-odd (holes: bagels, rings).
     PolysEo(Vec<Vec<V2>>),
     /// Round-capped, round-joined line.
-    Line {
-        pts: Vec<V2>,
-        width: f32,
-        closed: bool,
-    },
+    Line { pts: Vec<V2>, width: f32, closed: bool },
 }
 
 impl Shape {
     fn bounds(&self) -> Option<Rect> {
         match self {
             Shape::Poly(p) => Rect::of_points(p),
-            Shape::PolysEo(ps) => ps
-                .iter()
-                .filter_map(|p| Rect::of_points(p))
-                .reduce(|a, b| a.union(&b)),
-            Shape::Line { pts, width, .. } => {
-                Rect::of_points(pts).map(|r| r.grow(width * 0.5 + 1.0))
-            }
+            Shape::PolysEo(ps) => ps.iter().filter_map(|p| Rect::of_points(p)).reduce(|a, b| a.union(&b)),
+            Shape::Line { pts, width, .. } => Rect::of_points(pts).map(|r| r.grow(width * 0.5 + 1.0)),
         }
     }
 }
@@ -174,11 +147,7 @@ impl DrawList {
     }
 
     fn line_shape(&self, pts: &[V2], width: f32, closed: bool) -> Shape {
-        Shape::Line {
-            pts: self.tx(pts),
-            width: width * self.xf.width_scale(),
-            closed,
-        }
+        Shape::Line { pts: self.tx(pts), width: width * self.xf.width_scale(), closed }
     }
 
     // --- fills -------------------------------------------------------------
@@ -244,28 +213,14 @@ impl DrawList {
     pub fn knock_p(&mut self, tone: f32, screen: Screen, plates: u8, poly: &[V2]) {
         if poly.len() >= 3 {
             let s = self.poly_shape(poly);
-            self.push_cmd(
-                Op::Knock {
-                    tone,
-                    screen,
-                    plates,
-                },
-                s,
-            );
+            self.push_cmd(Op::Knock { tone, screen, plates }, s);
         }
     }
 
     pub fn knock_line(&mut self, tone: f32, width: f32, pts: &[V2], closed: bool) {
         if pts.len() >= 2 {
             let s = self.line_shape(pts, width, closed);
-            self.push_cmd(
-                Op::Knock {
-                    tone,
-                    screen: Screen::Solid,
-                    plates: PLATES_ALL,
-                },
-                s,
-            );
+            self.push_cmd(Op::Knock { tone, screen: Screen::Solid, plates: PLATES_ALL }, s);
         }
     }
 
@@ -301,16 +256,11 @@ impl DrawList {
             let shape = match &c.shape {
                 Shape::Poly(p) => Shape::Poly(self.tx(p)),
                 Shape::PolysEo(ps) => Shape::PolysEo(ps.iter().map(|p| self.tx(p)).collect()),
-                Shape::Line { pts, width, closed } => Shape::Line {
-                    pts: self.tx(pts),
-                    width: width * self.xf.width_scale(),
-                    closed: *closed,
-                },
+                Shape::Line { pts, width, closed } => {
+                    Shape::Line { pts: self.tx(pts), width: width * self.xf.width_scale(), closed: *closed }
+                }
             };
-            self.cmds.push(Cmd {
-                op: c.op.clone(),
-                shape,
-            });
+            self.cmds.push(Cmd { op: c.op.clone(), shape });
         }
     }
 
@@ -339,11 +289,7 @@ impl DrawList {
                     eat(p.screen as u64);
                     eat(p.mode as u64);
                 }
-                Op::Knock {
-                    tone,
-                    screen,
-                    plates,
-                } => {
+                Op::Knock { tone, screen, plates } => {
                     eat(2);
                     eat(tone.to_bits() as u64);
                     eat(*screen as u64);
@@ -362,11 +308,7 @@ impl DrawList {
             match &c.shape {
                 Shape::Poly(p) => pts(p),
                 Shape::PolysEo(ps) => ps.iter().for_each(|p| pts(p)),
-                Shape::Line {
-                    pts: p,
-                    width,
-                    closed,
-                } => {
+                Shape::Line { pts: p, width, closed } => {
                     pts(p);
                     eat(width.to_bits() as u64);
                     eat(*closed as u64);

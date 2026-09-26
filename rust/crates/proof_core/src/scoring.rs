@@ -19,16 +19,8 @@ fn line(a: V2, b: V2) -> Vec<V2> {
 /// Template strokes for a pattern on a boule, in unit coordinates.
 fn boule_template(p: Pattern) -> Vec<Vec<V2>> {
     match p {
-        Pattern::Ear => vec![quad_bezier(
-            v2(-0.6, 0.32),
-            v2(-0.05, -0.28),
-            v2(0.6, 0.12),
-            10,
-        )],
-        Pattern::Cross => vec![
-            line(v2(0.0, -0.62), v2(0.0, 0.62)),
-            line(v2(-0.62, 0.0), v2(0.62, 0.0)),
-        ],
+        Pattern::Ear => vec![quad_bezier(v2(-0.6, 0.32), v2(-0.05, -0.28), v2(0.6, 0.12), 10)],
+        Pattern::Cross => vec![line(v2(0.0, -0.62), v2(0.0, 0.62)), line(v2(-0.62, 0.0), v2(0.62, 0.0))],
         Pattern::Wheat => {
             let mut v = vec![line(v2(0.0, -0.66), v2(0.0, 0.7))];
             for i in 0..4 {
@@ -60,12 +52,7 @@ pub fn template(p: Pattern, shape: Shape) -> Vec<Vec<V2>> {
         Shape::Boule => boule_template(p),
         Shape::Batard => {
             if p == Pattern::Ear {
-                return vec![quad_bezier(
-                    v2(-1.0, 0.1),
-                    v2(0.0, -0.12),
-                    v2(1.0, -0.08),
-                    10,
-                )];
+                return vec![quad_bezier(v2(-1.0, 0.1), v2(0.0, -0.12), v2(1.0, -0.08), 10)];
             }
             // Lay the boule design along the long axis.
             let (rx, ry) = shape.radii();
@@ -80,12 +67,7 @@ pub fn template(p: Pattern, shape: Shape) -> Vec<Vec<V2>> {
 /// Mean distance between two resampled strokes, trying both directions.
 fn stroke_dist(a: &[V2], b: &[V2]) -> f32 {
     let fwd: f32 = a.iter().zip(b).map(|(p, q)| p.dist(*q)).sum::<f32>() / a.len() as f32;
-    let rev: f32 = a
-        .iter()
-        .zip(b.iter().rev())
-        .map(|(p, q)| p.dist(*q))
-        .sum::<f32>()
-        / a.len() as f32;
+    let rev: f32 = a.iter().zip(b.iter().rev()).map(|(p, q)| p.dist(*q)).sum::<f32>() / a.len() as f32;
     fwd.min(rev)
 }
 
@@ -95,19 +77,12 @@ pub fn match_score(cuts: &[Vec<V2>], template: &[Vec<V2>]) -> f32 {
         return 0.0;
     }
     let tpl: Vec<Vec<V2>> = template.iter().map(|s| resample(s, SAMPLES)).collect();
-    let mut left: Vec<Vec<V2>> = cuts
-        .iter()
-        .filter(|c| c.len() >= 2)
-        .map(|s| resample(s, SAMPLES))
-        .collect();
+    let mut left: Vec<Vec<V2>> = cuts.iter().filter(|c| c.len() >= 2).map(|s| resample(s, SAMPLES)).collect();
     let sigma = 0.16;
     let mut total = 0.0;
     for t in &tpl {
-        let best = left
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (i, stroke_dist(t, c)))
-            .min_by(|a, b| a.1.total_cmp(&b.1));
+        let best =
+            left.iter().enumerate().map(|(i, c)| (i, stroke_dist(t, c))).min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((i, d)) = best {
             total += (-(d / sigma).powi(2)).exp();
             left.remove(i);
@@ -131,11 +106,7 @@ pub fn cleanliness(stroke: &[V2]) -> f32 {
     let chord = stroke[0].dist(*stroke.last().unwrap());
     // Wiggle: how far the path strays from a smooth resampled version of itself.
     let smooth = resample(stroke, 6);
-    let wiggle: f32 = stroke
-        .iter()
-        .map(|p| dist_to_polyline(*p, &smooth))
-        .sum::<f32>()
-        / stroke.len() as f32;
+    let wiggle: f32 = stroke.iter().map(|p| dist_to_polyline(*p, &smooth)).sum::<f32>() / stroke.len() as f32;
     let straightness = (chord / len).clamp(0.0, 1.0);
     let steady = (1.0 - wiggle * 12.0).clamp(0.0, 1.0);
     (0.35 + 0.35 * steady + 0.3 * straightness.powf(0.5)).clamp(0.0, 1.0)
@@ -146,10 +117,7 @@ pub fn symmetry(cuts: &[Vec<V2>]) -> f32 {
     if cuts.is_empty() {
         return 0.0;
     }
-    let mirrored: Vec<Vec<V2>> = cuts
-        .iter()
-        .map(|s| s.iter().map(|p| v2(-p.x, p.y)).collect())
-        .collect();
+    let mirrored: Vec<Vec<V2>> = cuts.iter().map(|s| s.iter().map(|p| v2(-p.x, p.y)).collect()).collect();
     match_score(&mirrored, cuts)
 }
 
@@ -168,11 +136,8 @@ pub struct ScoreReport {
 
 /// Evaluate a scored loaf. `guide` is the pattern the player chose to trace (if any).
 pub fn evaluate(cuts: &[Vec<V2>], shape: Shape, guide: Option<Pattern>) -> ScoreReport {
-    let cuts: Vec<Vec<V2>> = cuts
-        .iter()
-        .filter(|c| c.len() >= 2 && polyline_len(c) > 0.05)
-        .cloned()
-        .collect();
+    let cuts: Vec<Vec<V2>> =
+        cuts.iter().filter(|c| c.len() >= 2 && polyline_len(c) > 0.05).cloned().collect();
     let mut best: Option<(Pattern, f32)> = None;
     for p in Pattern::ALL {
         let m = match_score(&cuts, &template(p, shape));
@@ -191,27 +156,12 @@ pub fn evaluate(cuts: &[Vec<V2>], shape: Shape, guide: Option<Pattern>) -> Score
         (None, Some((_, m))) => (None, m),
         _ => (None, 0.0),
     };
-    let named = if pattern.is_some() {
-        pattern_match
-    } else {
-        0.0
-    };
+    let named = if pattern.is_some() { pattern_match } else { 0.0 };
     let n = cuts.len() as f32;
     // Freehand is always fine: 1–6 clean cuts look good; a recognised pattern looks great.
-    let variety = if n == 0.0 {
-        0.0
-    } else {
-        (1.0 - ((n - 3.0).abs() / 6.0)).clamp(0.4, 1.0)
-    };
-    let looks =
-        (0.45 * clean + 0.2 * variety + 0.35 * named.max(symmetry(&cuts) * 0.6)).clamp(0.0, 1.0);
-    ScoreReport {
-        pattern,
-        pattern_match,
-        clean,
-        looks,
-        cut_count: cuts.len() as u32,
-    }
+    let variety = if n == 0.0 { 0.0 } else { (1.0 - ((n - 3.0).abs() / 6.0)).clamp(0.4, 1.0) };
+    let looks = (0.45 * clean + 0.2 * variety + 0.35 * named.max(symmetry(&cuts) * 0.6)).clamp(0.0, 1.0);
+    ScoreReport { pattern, pattern_match, clean, looks, cut_count: cuts.len() as u32 }
 }
 
 #[cfg(test)]
@@ -224,10 +174,7 @@ mod tests {
         strokes
             .iter()
             .map(|s| {
-                resample(s, 20)
-                    .into_iter()
-                    .map(|p| p + v2(r.range(-amt, amt), r.range(-amt, amt)))
-                    .collect()
+                resample(s, 20).into_iter().map(|p| p + v2(r.range(-amt, amt), r.range(-amt, amt))).collect()
             })
             .collect()
     }
@@ -259,11 +206,7 @@ mod tests {
         for p in Pattern::ALL {
             let t = template(p, Shape::Boule);
             let scribble: Vec<Vec<V2>> = (0..t.len())
-                .map(|_| {
-                    (0..6)
-                        .map(|_| v2(r.range(-0.8, 0.8), r.range(-0.8, 0.8)))
-                        .collect()
-                })
+                .map(|_| (0..6).map(|_| v2(r.range(-0.8, 0.8), r.range(-0.8, 0.8))).collect())
                 .collect();
             let m = match_score(&scribble, &t);
             assert!(m < 0.3, "{p:?} {m}");
@@ -282,14 +225,8 @@ mod tests {
     #[test]
     fn decisive_strokes_are_cleaner_than_wobbly_ones() {
         let straight: Vec<V2> = (0..20).map(|i| v2(-0.6 + i as f32 * 0.06, 0.0)).collect();
-        let wobbly: Vec<V2> = (0..20)
-            .map(|i| {
-                v2(
-                    -0.6 + i as f32 * 0.06,
-                    if i % 2 == 0 { 0.06 } else { -0.06 },
-                )
-            })
-            .collect();
+        let wobbly: Vec<V2> =
+            (0..20).map(|i| v2(-0.6 + i as f32 * 0.06, if i % 2 == 0 { 0.06 } else { -0.06 })).collect();
         assert!(cleanliness(&straight) > cleanliness(&wobbly) + 0.1);
     }
 

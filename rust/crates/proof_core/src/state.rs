@@ -58,6 +58,21 @@ pub struct DayStats {
     pub leftovers: u32,
 }
 
+/// Player preferences (saved with the bakery).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Settings {
+    pub sound: bool,
+    pub haptics: bool,
+    /// Reduce motion: gentler print-in, no ink wobble.
+    pub calm: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { sound: true, haptics: true, calm: false }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GameState {
     pub version: u32,
@@ -82,6 +97,8 @@ pub struct GameState {
     pub next_id: u32,
     pub rng: Rng,
     pub tips_seen: Vec<String>,
+    #[serde(default)]
+    pub settings: Settings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -132,6 +149,8 @@ pub enum Action {
     Sleep,
     /// Mark a tutorial note as read (any phase).
     Tip(String),
+    /// Change preferences (any phase).
+    Settings(Settings),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -248,6 +267,7 @@ impl GameState {
             next_id: 1,
             rng,
             tips_seen: Vec::new(),
+            settings: Settings::default(),
         };
         for _ in 0..2 {
             let d = g.new_dough(Recipe::Country, Shape::Boule, 0.8, 0.4, 0.85, "Grandma");
@@ -395,6 +415,10 @@ impl GameState {
             (Phase::Evening, A::Mix { recipe, jar, shape, fold }) => self.mix(recipe, jar, shape, fold),
             (Phase::Evening, A::Buy(u)) => self.buy(u),
             (_, A::Rename { jar, name }) => self.rename(jar, name),
+            (_, A::Settings(st)) => {
+                self.settings = st;
+                Ok(Vec::new())
+            }
             (_, A::Tip(key)) => {
                 self.mark_tip(&key);
                 Ok(Vec::new())

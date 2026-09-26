@@ -87,6 +87,7 @@ pub struct Morning {
     prompt: Gd<Label>,
     tray: Vec<Art>,
     work_labels: Vec<Gd<Label>>,
+    oven_shot: bool,
     floaters: Vec<Floater>,
     counter_y: f32,
     dough_c: V2,
@@ -162,6 +163,7 @@ impl Morning {
             prompt,
             tray: Vec::new(),
             work_labels: Vec::new(),
+            oven_shot: false,
             floaters: Vec::new(),
             counter_y,
             dough_c: dough_center(h),
@@ -1002,6 +1004,10 @@ impl Screen for Morning {
                 if !pulled && t >= target {
                     self.pull(ctx);
                     return Some("oven".into());
+                }
+                if !self.oven_shot && t > 0.25 {
+                    self.oven_shot = true;
+                    return Some("baking".into());
                 }
                 None
             }

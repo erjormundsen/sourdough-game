@@ -254,4 +254,30 @@ fn main() {
         });
     }
     b.save(&out.join("backdrops.png"));
+
+    // --- App icon: Bubbles on a halftone tile ------------------------------------------------
+    let mut b = Board::new(512.0, 512.0, 1.0, Edition::Daylight);
+    b.style.offsets = [v2(1.6, -1.2), v2(-1.2, 0.9), v2(0.9, 1.4), V2::ZERO];
+    b.put(V2::ZERO, |d| {
+        let tile = proof_core::geom::rounded_rect(proof_core::geom::rect(0.0, 0.0, 512.0, 512.0), 96.0);
+        d.fill(Ink::Yellow, 0.55, &tile);
+        d.fill_p(proof_core::draw::Paint::coarse(Ink::Pink, 0.3).add(), &tile);
+        d.with(Xf::at(v2(256.0, 470.0)).scaled(1.62), |d| {
+            jar(
+                d,
+                &JarView {
+                    pep: 0.95,
+                    tang: 0.45,
+                    rise: 0.85,
+                    band: 0.35,
+                    expr: Expr::Excited,
+                    seed: 4,
+                    ..JarView::default()
+                },
+            )
+        });
+        proof_core::art::twinkle(d, v2(92.0, 118.0), 28.0, Ink::Yellow);
+        proof_core::art::twinkle(d, v2(420.0, 170.0), 20.0, Ink::Pink);
+    });
+    b.save(&out.join("icon.png"));
 }

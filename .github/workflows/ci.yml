@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, tests, artboard)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Balance run (30 days x 10 seeds)
+        run: cargo run --release -p proof_tools --bin autoplay -- 30 10
+      - name: Render artboard
+        run: cargo run --release -p proof_tools --bin artboard -- ../out/artboard
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artboard
+          path: out/artboard/*.png
+
+  godot-smoke:
+    name: Godot headless smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.94"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: scripts/build.sh
+      - run: scripts/fetch-godot.sh
+      - run: scripts/smoke.sh 2

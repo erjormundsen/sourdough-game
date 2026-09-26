@@ -52,6 +52,8 @@ pub struct Riso {
     pub kick: f32,
     /// Constant gentle misregistration in reference units.
     pub offsets: [V2; 3],
+    /// Reduce motion: smaller kicks and offsets.
+    pub calm: bool,
 }
 
 fn material(path: &str, grain: &Gd<ImageTexture>) -> Gd<ShaderMaterial> {
@@ -101,6 +103,7 @@ impl Riso {
                 proof_core::geom::v2(-0.8, 0.55),
                 proof_core::geom::v2(0.6, 0.95),
             ],
+            calm: false,
         };
         r.apply_palette(palette);
         r.apply_kick(0.0);
@@ -118,10 +121,14 @@ impl Riso {
     }
 
     pub fn apply_kick(&mut self, kick: f32) {
+        let (kick, k_off) = if self.calm { (kick * 0.15, 0.5) } else { (kick, 1.0) };
+        if (kick - self.kick).abs() < 1e-4 && kick != 0.0 {
+            return;
+        }
         self.kick = kick;
         self.ink_mat.set_shader_parameter("kick", &kick.to_variant());
         for (i, o) in self.offsets.iter().enumerate() {
-            let px = *o * self.scale;
+            let px = *o * self.scale * k_off;
             self.ink_mat.set_shader_parameter(&format!("off{i}"), &Vector2::new(px.x, px.y).to_variant());
         }
     }

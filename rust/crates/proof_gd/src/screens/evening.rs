@@ -303,8 +303,8 @@ impl Evening {
         let n = flours.len() as f32;
         let mut rn = self.rn.clone();
         for (i, f) in flours.iter().enumerate() {
-            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 170.0;
-            let b = Button::bare(ctx, &mut rn, v2(x, self.counter_y + 40.0), 115.0, Icon::Flour(*f));
+            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 200.0;
+            let b = Button::bare(ctx, &mut rn, v2(x, self.counter_y + 20.0), 150.0, Icon::Flour(*f));
             self.feed_btns.add(Btn::Flour(*f), b);
         }
         let h = ctx.lay.h;

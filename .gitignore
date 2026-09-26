@@ -6,3 +6,4 @@ godot/bin/
 # Local tools (Godot editor download, screenshots)
 .tools/
 out/
+build/

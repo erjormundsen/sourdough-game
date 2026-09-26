@@ -4,7 +4,6 @@ description = "Pure-Rust rules, simulation and procedural art for Proof, the ris
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
 
 [dependencies]
 serde.workspace = true

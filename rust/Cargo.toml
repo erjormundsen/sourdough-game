@@ -6,7 +6,6 @@ members = ["crates/proof_core", "crates/proof_raster", "crates/proof_gd", "crate
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
-license = "MIT"
 
 [workspace.dependencies]
 proof_core = { path = "crates/proof_core" }

@@ -23,6 +23,7 @@ enum Btn {
     Zine,
     Sleep,
     Back,
+    Pref(u8),
 }
 
 pub struct Night {
@@ -35,6 +36,15 @@ pub struct Night {
     rows: Vec<Art>,
     btns: Panel<Btn>,
     shop: Panel<Btn>,
+}
+
+fn pref_text(st: proof_core::state::Settings, i: u8) -> String {
+    let on = |b: bool| if b { "on" } else { "off" };
+    match i {
+        0 => format!("Sound: {}", on(st.sound)),
+        1 => format!("Buzz: {}", on(st.haptics)),
+        _ => format!("Calm print: {}", on(st.calm)),
+    }
 }
 
 pub fn unlock_icon(u: Unlock) -> Icon {
@@ -99,16 +109,16 @@ impl Night {
         let frac = economy::xp_to_next(xp).map(|(a, b)| a as f32 / b as f32).unwrap_or(1.0);
         let d = list(|d| {
             // Masthead rules and stars.
-            d.line(Ink::Key, 5.0, &[v2(30.0, 186.0), v2(690.0, 186.0)]);
-            d.line(Ink::Key, 2.0, &[v2(30.0, 194.0), v2(690.0, 194.0)]);
-            d.line(Ink::Key, 2.0, &[v2(30.0, 470.0), v2(690.0, 470.0)]);
-            d.line(Ink::Key, 2.0, &[v2(360.0, 210.0), v2(360.0, 455.0)]);
+            d.line(Ink::Key, 5.0, &[v2(30.0, 180.0), v2(690.0, 180.0)]);
+            d.line(Ink::Key, 2.0, &[v2(30.0, 187.0), v2(690.0, 187.0)]);
+            d.line(Ink::Key, 2.0, &[v2(30.0, 478.0), v2(690.0, 478.0)]);
+            d.line(Ink::Key, 2.0, &[v2(360.0, 226.0), v2(360.0, 466.0)]);
             for (x, s) in [(56.0, 14.0), (664.0, 14.0)] {
                 twinkle(d, v2(x, 140.0), s, Ink::Pink);
             }
             // Loaf of the day.
             if let Some(l) = &best {
-                d.with(Xf::at(v2(190.0, 340.0)), |d| loaf_top(d, &l.view(76.0)));
+                d.with(Xf::at(v2(190.0, 345.0)), |d| loaf_top(d, &l.view(72.0)));
             } else {
                 d.ht(Ink::Blue, 0.25, &proof_core::geom::circle(v2(190.0, 330.0), 80.0));
             }
@@ -129,15 +139,15 @@ impl Night {
         self.label(ctx, TextSpec::new("The Daily Crumb", rect(30.0, 100.0, 660.0, 80.0), 56.0).bold());
         self.label(
             ctx,
-            TextSpec::new(format!("Day {} · evening edition", st.day), rect(30.0, 196.0, 660.0, 30.0), 20.0)
+            TextSpec::new(format!("Day {} · evening edition", st.day), rect(30.0, 190.0, 660.0, 30.0), 20.0)
                 .plain(),
         );
-        self.label(ctx, TextSpec::new("Loaf of the Day", rect(40.0, 206.0, 300.0, 34.0), 24.0).bold());
+        self.label(ctx, TextSpec::new("Loaf of the Day", rect(40.0, 226.0, 300.0, 34.0), 24.0).bold());
         let cap = best
             .as_ref()
             .map(|l| format!("{} {}", l.title(), "★".repeat(l.stars as usize)))
             .unwrap_or_else(|| "Nothing baked today".into());
-        self.label(ctx, TextSpec::new(cap, rect(40.0, 420.0, 300.0, 44.0), 20.0).wrap());
+        self.label(ctx, TextSpec::new(cap, rect(40.0, 430.0, 300.0, 44.0), 20.0).wrap());
         let t = &st.today;
         self.label(
             ctx,
@@ -251,6 +261,23 @@ impl Night {
                 TextSpec::new("Bake something to start your zine!", rect(60.0, 400.0, 600.0, 60.0), 26.0),
             );
         }
+        self.build_prefs(ctx);
+    }
+
+    fn build_prefs(&mut self, ctx: &mut Ctx) {
+        let y = ctx.lay.h - 200.0;
+        let mut rn = self.rn.clone();
+        let st = ctx.state.settings;
+        for i in 0..3u8 {
+            let b = Button::pill(
+                ctx,
+                &mut rn,
+                rect(30.0 + i as f32 * 225.0, y, 210.0, 62.0),
+                &pref_text(st, i),
+                Ink::Blue,
+            );
+            self.btns.add(Btn::Pref(i), b);
+        }
     }
 
     fn click(&mut self, ctx: &mut Ctx, b: Btn) {
@@ -262,6 +289,19 @@ impl Night {
                 ctx.act(Action::Sleep);
             }
             Btn::Back => ctx.nav(if self.zine { Nav::Night } else { Nav::Phase }),
+            Btn::Pref(i) => {
+                let mut st = ctx.state.settings;
+                match i {
+                    0 => st.sound = !st.sound,
+                    1 => st.haptics = !st.haptics,
+                    _ => st.calm = !st.calm,
+                }
+                ctx.act(Action::Settings(st));
+                let text = pref_text(st, i);
+                if let Some(b) = self.btns.get(Btn::Pref(i)) {
+                    b.set_text(&text);
+                }
+            }
         }
     }
 }

@@ -195,7 +195,13 @@ impl INode2D for Game {
             self.pal_t = (self.pal_t + dt / 0.9).min(1.0);
         }
         let pal = self.pal_from.lerp(&self.pal_to, proof_core::anim::ease_in_out(self.pal_t));
+        let prefs = self.state.settings;
+        if let Some(m) = self.mixer.as_mut() {
+            m.muted = !prefs.sound;
+            m.haptics = prefs.haptics;
+        }
         if let Some(r) = self.riso.as_mut() {
+            r.calm = prefs.calm;
             r.apply_kick(k.abs());
             r.apply_palette(pal);
         }

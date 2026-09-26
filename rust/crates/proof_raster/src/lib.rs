@@ -405,10 +405,11 @@ impl Canvas {
                     let py = ((ry - pl.origin.y) * pl.scale - 0.5) as i64;
                     if px >= 0 && py >= 0 && (px as u32) < pl.width && (py as u32) < pl.height {
                         let a = bk[(py as u32 * pl.width + px as u32) as usize] as f32 / 255.0;
-                        let paper =
-                            palette
-                                .paper
-                                .mul(Rgb(1.0 - 0.03 * g, 1.0 - 0.03 * g, 1.0 - 0.035 * g));
+                        let paper = palette.paper.times(Rgb(
+                            1.0 - 0.03 * g,
+                            1.0 - 0.03 * g,
+                            1.0 - 0.035 * g,
+                        ));
                         base = base.lerp(paper, a);
                     }
                 }

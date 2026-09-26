@@ -42,7 +42,7 @@ impl Rgb {
             self.2 + (o.2 - self.2) * t,
         )
     }
-    pub fn mul(self, o: Rgb) -> Rgb {
+    pub fn times(self, o: Rgb) -> Rgb {
         Rgb(self.0 * o.0, self.1 * o.1, self.2 * o.2)
     }
     pub fn to_u8(self) -> [u8; 3] {
@@ -119,7 +119,7 @@ impl Palette {
         let mut c = base;
         for (i, k) in cov.iter().enumerate() {
             let k = k.clamp(0.0, 1.0);
-            c = c.mul(Rgb(1.0, 1.0, 1.0).lerp(self.inks[i], k));
+            c = c.times(Rgb(1.0, 1.0, 1.0).lerp(self.inks[i], k));
         }
         c
     }

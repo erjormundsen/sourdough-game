@@ -47,7 +47,7 @@ impl Board {
         self.canvas.draw(&pl, V2::ZERO, &self.palette, &self.style);
     }
 
-    fn save(&self, path: &PathBuf) {
+    fn save(&self, path: &std::path::Path) {
         proof_tools::write_png(
             path,
             self.canvas.width,

@@ -139,7 +139,7 @@ pub fn jar(d: &mut DrawList, v: &JarView) {
         for i in 0..n {
             let hx = hash01(v.seed ^ 0xabc, i * 5);
             let hy = hash01(v.seed ^ 0xabc, i * 5 + 1);
-            let ph = hash01(v.seed ^ 0xabc, i * 5 + 2) * 6.28;
+            let ph = hash01(v.seed ^ 0xabc, i * 5 + 2) * std::f32::consts::TAU;
             let bob = (v.t * (1.4 + v.pep) + ph).sin() * (1.5 + 2.5 * v.pep);
             let c = v2(-62.0 + 124.0 * hx, y_top + 16.0 + span * hy + bob);
             // Keep the face area clear.

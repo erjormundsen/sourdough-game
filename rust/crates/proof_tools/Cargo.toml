@@ -1,0 +1,13 @@
+[package]
+name = "proof_tools"
+description = "Dev tools for Proof: artboard renderer and autoplay balance runner."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+proof_core.workspace = true
+proof_raster.workspace = true
+png.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "proof_gd"
+description = "Godot (gdext) bridge for Proof."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "proof"
+crate-type = ["cdylib"]
+
+[dependencies]
+proof_core.workspace = true
+proof_raster.workspace = true
+godot.workspace = true

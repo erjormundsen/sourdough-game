@@ -1,0 +1,11 @@
+[package]
+name = "proof_core"
+description = "Pure-Rust rules, simulation and procedural art for Proof, the riso sourdough bakery game."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

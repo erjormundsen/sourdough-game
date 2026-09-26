@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = ["crates/proof_core", "crates/proof_raster", "crates/proof_gd", "crates/proof_tools"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+
+[workspace.dependencies]
+proof_core = { path = "crates/proof_core" }
+proof_raster = { path = "crates/proof_raster" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny-skia = "0.12"
+godot = { version = "=0.5.5", features = ["api-4-7"] }
+png = "0.18"
+
+# Rasterising in debug builds is slow; keep our code debuggable but deps fast.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

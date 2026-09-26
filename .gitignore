@@ -1,0 +1,8 @@
+# Rust
+rust/target/
+# Godot
+godot/.godot/
+godot/bin/
+# Local tools (Godot editor download, screenshots)
+.tools/
+out/

@@ -1,0 +1,11 @@
+[package]
+name = "proof_raster"
+description = "Rasterises proof_core DrawLists into four-ink riso plates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+proof_core.workspace = true
+tiny-skia.workspace = true

@@ -1,0 +1,36 @@
+; Engine configuration file.
+; Proof — a tiny riso-kawaii sourdough bakery. All game logic lives in Rust (../rust).
+
+config_version=5
+
+[application]
+
+config/name="Proof"
+config/description="A tiny riso-print sourdough bakery."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/bg_color=Color(0.968627, 0.941176, 0.890196, 1)
+boot_splash/show_image=false
+config/icon=""
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/window_width_override=450
+window/size/window_height_override=800
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=1
+environment/defaults/default_clear_color=Color(0.968627, 0.941176, 0.890196, 1)
+viewport/hdr_2d=false

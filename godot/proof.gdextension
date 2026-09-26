@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.7
+reloadable = true
+
+[libraries]
+linux.debug.x86_64 = "res://bin/linux/libproof.so"
+linux.release.x86_64 = "res://bin/linux/libproof.so"
+macos.debug = "res://bin/macos/libproof.dylib"
+macos.release = "res://bin/macos/libproof.dylib"
+windows.debug.x86_64 = "res://bin/windows/proof.dll"
+windows.release.x86_64 = "res://bin/windows/proof.dll"
+android.debug.arm64 = "res://bin/android/arm64/libproof.so"
+android.release.arm64 = "res://bin/android/arm64/libproof.so"
+ios.debug = "res://bin/ios/libproof.ios.framework"
+ios.release = "res://bin/ios/libproof.ios.framework"

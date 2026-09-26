@@ -222,3 +222,39 @@ impl Bot {
 pub fn shelf_matches(g: &GameState, w: &Want) -> usize {
     g.shelf.iter().filter(|s| customer::want_score(w, s, &[]) > 0.9).count()
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::economy::{LEVELS, Unlock};
+
+    #[test]
+    fn thirty_days_twenty_seeds_hold_invariants() {
+        for seed in 0..20u64 {
+            let mut g = GameState::new(seed);
+            let mut bot = Bot::new(seed);
+            for _ in 0..30 {
+                let log = bot.play_day(&mut g);
+                assert_eq!(g.phase, Phase::Morning, "day ends back at morning");
+                assert!(log.gestures <= 120, "day {} took {} gestures", log.day, log.gestures);
+                assert!(g.starters.iter().all(|s| s.pep >= 5.0), "starters never die");
+                assert!(g.fridge.len() as u32 <= g.fridge_slots);
+                assert!(g.discard <= crate::state::MAX_DISCARD);
+                // Round-trips mid-run too.
+                assert_eq!(GameState::from_json(&g.to_json()).unwrap(), g);
+            }
+            assert!(g.level() >= 5, "seed {seed}: level {} after 30 days (xp {})", g.level(), g.xp);
+            assert!(g.has(Unlock::Fridge(4)), "seed {seed} never grew the fridge");
+            assert!(g.starters.len() >= 2, "seed {seed} never adopted a second jar");
+        }
+        let _ = LEVELS;
+    }
+
+    #[test]
+    fn early_days_are_short() {
+        let mut g = GameState::new(7);
+        let mut bot = Bot::new(7);
+        let d1 = bot.play_day(&mut g);
+        assert!(d1.gestures <= 30, "day one: {} gestures", d1.gestures);
+        assert!(d1.served >= 2);
+    }
+}

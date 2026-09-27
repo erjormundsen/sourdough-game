@@ -26,9 +26,9 @@ uniform float formation = 0.045;
 
 uniform float spread = 0.05;
 uniform float rough = 0.34;
-uniform vec4 mottle = vec4(0.13, 0.11, 0.13, 0.06);
-uniform vec4 velvet = vec4(0.22, 0.18, 0.22, 0.12);
-uniform vec4 pinholes = vec4(0.85, 0.8, 0.85, 0.5);
+uniform vec4 mottle = vec4(0.11, 0.11, 0.13, 0.06);
+uniform vec4 velvet = vec4(0.19, 0.18, 0.22, 0.1);
+uniform vec4 pinholes = vec4(0.85, 0.8, 0.85, 0.35);
 uniform vec4 streaks = vec4(0.1, 0.08, 0.1, 0.04);
 uniform vec4 starve_x = vec4(0.035, -0.025, 0.03, 0.0);
 uniform vec4 starve_y = vec4(0.025, 0.035, -0.025, 0.012);

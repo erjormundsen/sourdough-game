@@ -72,10 +72,11 @@ impl Edition {
                 paper: Rgb::hex(0xFBF3E4),
                 inks: [Rgb::hex(0xFF7477), Rgb::hex(0xFFB511), Rgb::hex(0x5EC8E5), Rgb::hex(0x6A3D33)],
             },
-            // Shop day: Fluorescent Pink, Yellow, Blue, Federal Blue key.
+            // Shop day: Fluorescent Pink, Yellow, Cornflower, Federal Blue key. (Cornflower
+            // rather than Riso Blue keeps key-ink labels legible on blue buttons.)
             Edition::Daylight => Palette {
                 paper: Rgb::hex(0xF8F2E5),
-                inks: [Rgb::hex(0xFF48B0), Rgb::hex(0xFFE800), Rgb::hex(0x0078BF), Rgb::hex(0x34457A)],
+                inks: [Rgb::hex(0xFF48B0), Rgb::hex(0xFFE800), Rgb::hex(0x62A8E5), Rgb::hex(0x34457A)],
             },
             // Evening prep: berry pink, Melon lamp-light, violet, Plum key.
             Edition::Dusk => Palette {

@@ -59,6 +59,8 @@ pub struct Riso {
     press: Arc<PressTextures>,
     /// Palette last sent to the materials.
     applied: Option<Palette>,
+    /// (kick, calm) last sent to the ink material.
+    drums_applied: Option<(f32, bool)>,
     /// Reduce motion: smaller kicks and offsets.
     pub calm: bool,
 }
@@ -124,6 +126,7 @@ impl Riso {
             style: PressStyle::default(),
             press,
             applied: None,
+            drums_applied: None,
             calm: false,
         };
         r.apply_style();
@@ -156,12 +159,15 @@ impl Riso {
         }
     }
 
-    /// Slam the drums out of register (`kick` 0..1, springing back to 0).
+    /// Slam the drums out of register (`kick` 0..1, springing back to 0). Reduce motion
+    /// ("calm") keeps a gentler resting misregistration and a much smaller kick.
     pub fn apply_kick(&mut self, kick: f32) {
         let (kick, k_off) = if self.calm { (kick * 0.15, 0.5) } else { (kick, 1.0) };
-        if (kick - self.kick).abs() < 1e-4 && kick != 0.0 {
+        let key = (kick, self.calm);
+        if self.drums_applied.is_some_and(|(k, c)| c == key.1 && (k - kick).abs() < 1e-4) {
             return;
         }
+        self.drums_applied = Some(key);
         self.kick = kick;
         let mut st = self.style;
         st.kick = kick;

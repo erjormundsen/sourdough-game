@@ -326,9 +326,9 @@ impl Default for PressStyle {
             warp: 0.3,
             spread: 0.05,
             rough: 0.34,
-            mottle: [0.13, 0.11, 0.13, 0.06],
-            velvet: [0.22, 0.18, 0.22, 0.12],
-            pinholes: [0.85, 0.8, 0.85, 0.5],
+            mottle: [0.11, 0.11, 0.13, 0.06],
+            velvet: [0.19, 0.18, 0.22, 0.1],
+            pinholes: [0.85, 0.8, 0.85, 0.35],
             streaks: [0.1, 0.08, 0.1, 0.04],
             starve_x: [0.035, -0.025, 0.03, 0.0],
             starve_y: [0.025, 0.035, -0.025, 0.012],
@@ -433,6 +433,29 @@ mod tests {
             let n = (tex.size * tex.size) as f32;
             let mean: f32 = tex.rgba.chunks_exact(4).map(|p| p[ch] as f32 / 255.0).sum::<f32>() / n;
             assert!((mean - 0.5).abs() < 0.03, "channel {ch} mean {mean}");
+        }
+    }
+
+    #[test]
+    fn every_shader_param_is_a_uniform_of_the_riso_shaders() {
+        // The Godot press reads these names; a rename on one side only must fail here.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../godot/shaders");
+        let src: String = ["riso_press.gdshaderinc", "riso_ink.gdshader"]
+            .iter()
+            .map(|f| std::fs::read_to_string(dir.join(f)).expect("shader source"))
+            .collect();
+        let uniforms: Vec<&str> = src
+            .lines()
+            .filter(|l| l.trim_start().starts_with("uniform "))
+            .filter_map(|l| l.split_whitespace().nth(2))
+            .map(|w| w.trim_end_matches(';'))
+            .collect();
+        let tex = press_textures(1.0);
+        for (name, _) in PressStyle::default().shader_params(&tex, 1.0) {
+            assert!(uniforms.contains(&name), "shader uniform `{name}` missing");
+        }
+        for name in ["fine_tex", "mid_tex", "coarse_tex", "paper", "ink0", "ink1", "ink2", "ink3"] {
+            assert!(uniforms.contains(&name), "shader uniform `{name}` missing");
         }
     }
 

@@ -41,18 +41,18 @@ vec2 drum(vec2 d, vec2 shift, vec4 a) {
 }
 
 void fragment() {
-	vec2 screen = 1.0 / SCREEN_PIXEL_SIZE;
+	highp vec2 screen = 1.0 / SCREEN_PIXEL_SIZE;
 	vec4 f = texture(fine_tex, sp / fine_size);
 	vec4 m = texture(mid_tex, sp / mid_size);
-	vec2 d = sp - 0.5 * screen;
-	vec2 w = (m.rg - 0.5) * (2.0 * warp_px);
-	// UV per screen pixel along x and down the page.
-	vec2 ux = dFdx(UV);
-	vec2 uy = dFdy(UV) * sign(dFdy(sp.y));
-	vec2 o0 = w - drum(d, shift0, lin0);
-	vec2 o1 = vec2(-w.y, w.x) - drum(d, shift1, lin1);
-	vec2 o2 = vec2(w.y, -w.x) - drum(d, shift2, lin2);
-	vec2 o3 = w * -0.6 - drum(d, shift3, lin3);
+	highp vec2 d = sp - 0.5 * screen;
+	highp vec2 w = (m.rg - 0.5) * (2.0 * warp_px);
+	// UV per screen pixel along x and down the page (highp: offsets are fractions of a texel).
+	highp vec2 ux = dFdx(UV);
+	highp vec2 uy = dFdy(UV) * sign(dFdy(sp.y));
+	highp vec2 o0 = w - drum(d, shift0, lin0);
+	highp vec2 o1 = vec2(-w.y, w.x) - drum(d, shift1, lin1);
+	highp vec2 o2 = vec2(w.y, -w.x) - drum(d, shift2, lin2);
+	highp vec2 o3 = w * -0.6 - drum(d, shift3, lin3);
 	vec4 v = vec4(
 		texture(TEXTURE, UV + ux * o0.x + uy * o0.y).r,
 		texture(TEXTURE, UV + ux * o1.x + uy * o1.y).g,

@@ -165,9 +165,13 @@ impl Rig {
             .collect()
     }
 
-    /// Silhouette pre-stroke (see module docs).
+    /// Silhouette pre-stroke (see module docs). The stroke leans a touch towards the shadow
+    /// side (down-right, away from the upper-left light), so the finished contour swells
+    /// where the form turns away from the light and slims where it catches it, like a
+    /// brush-inked line.
     pub fn halo(&self, d: &mut DrawList, poly: &[V2]) {
-        d.stroke_p(Paint::solid(Ink::Key, 1.0), 2.0 * self.outer() - self.inner(), poly, true);
+        let lean = v2(0.75, 0.9) * (self.outer() * 0.22);
+        d.stroke_p(Paint::solid(Ink::Key, 1.0), 2.0 * self.outer() - self.inner(), &shift(poly, lean), true);
     }
 
     /// A riso "shadow plate": the silhouette offset down-right (light comes from the upper

@@ -131,7 +131,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         r.rim_shade(d, p, v2(0.7, 1.0), 9.0, Ink::Blue, 0.2);
     });
     let cb = crate::geom::Rect::of_points(&cap).unwrap_or_default();
-    curls(r, d, &cap, crate::geom::rect(cb.x + 16.0, cb.y + 12.0, cb.w - 32.0, cb.h * 0.45), 4, 3);
+    curls(r, d, &cap, crate::geom::rect(cb.x + 22.0, cb.y + 20.0, cb.w - 44.0, cb.h * 0.4), 4, 3);
 
     // Face: tiny nose, the shared grammar.
     let nose_c = h + v2(0.0, 36.0);

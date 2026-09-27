@@ -9,6 +9,11 @@
 //!
 //! `bake` (oven) and `bloom`/`ear` (reveal) are animated on screen, so every pass
 //! interpolates smoothly between raw dough and a finished loaf.
+//!
+//! Clip rule: the rasteriser's "Over" fills zero out masked-off pixels in the same span, so
+//! everything printed inside a clip (the cuts pass, and the whole loaf when Toasty draws it
+//! inside his window) knocks to paper and then *adds* ink, which prints the same colour and
+//! is always clip-safe. Passes outside the clip stay within the silhouette by construction.
 
 use super::style::{DETAIL, INNER, OUTER};
 use crate::content::{Inclusion, Recipe, Shape, Stencil, Topping};
@@ -18,8 +23,6 @@ use crate::draw::{Cmd, DrawList, Op, PLATES_ALL, PLATES_COLOR, Paint, Screen};
 const PY: u8 = 0b0011;
 /// Pink + yellow + key plates (everything a crust prints with).
 const PYK: u8 = 0b1011;
-/// Blue + key plates (clear these, then print pink and yellow "Over").
-const BK: u8 = 0b1100;
 use crate::geom::{
     V2, Xf, chaikin, circle, ellipse, heart, point_in_poly, polyline_len, resample, soft_star, v2,
 };
@@ -843,35 +846,35 @@ fn inclusion_bits(d: &mut DrawList, l: &Loaf, inc: Inclusion, bits: &[(V2, f32, 
     knock_many(d, 1.0, Screen::Solid, PLATES_ALL, &shapes);
     match inc {
         Inclusion::Olive => {
-            fill_many(d, Paint::solid(Ink::Blue, 0.85), &shapes);
-            fill_many(d, Paint::solid(Ink::Pink, 0.55), &shapes);
-            fill_many(d, Paint::solid(Ink::Key, 0.5), &shapes);
-            fill_many(d, Paint::solid(Ink::Yellow, 0.35), &shapes);
+            fill_many(d, Paint::solid(Ink::Blue, 0.85).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Pink, 0.55).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Key, 0.5).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Yellow, 0.35).add(), &shapes);
         }
         Inclusion::Cranberry => {
-            fill_many(d, Paint::solid(Ink::Pink, 1.0), &shapes);
-            fill_many(d, Paint::solid(Ink::Blue, 0.22), &shapes);
-            fill_many(d, Paint::solid(Ink::Key, 0.2 + 0.1 * b), &shapes);
+            fill_many(d, Paint::solid(Ink::Pink, 1.0).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Blue, 0.22).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Key, 0.2 + 0.1 * b).add(), &shapes);
         }
         Inclusion::Cheddar => {
-            fill_many(d, Paint::solid(Ink::Yellow, 1.0), &shapes);
-            fill_many(d, Paint::solid(Ink::Pink, 0.18 + 0.4 * b), &shapes);
+            fill_many(d, Paint::solid(Ink::Yellow, 1.0).add(), &shapes);
+            fill_many(d, Paint::solid(Ink::Pink, 0.18 + 0.4 * b).add(), &shapes);
             // Crisp frico edges once baked.
             if b > 0.3 {
                 for sh in &shapes {
-                    d.stroke_p(Paint::solid(Ink::Key, 0.35 * b), l.lw(2.4), sh, true);
+                    d.stroke_p(Paint::solid(Ink::Key, 0.35 * b).add(), l.lw(2.4), sh, true);
                 }
             }
         }
     }
     knock_many(d, 0.9, Screen::Solid, PLATES_COLOR, &shines);
     if !skins.is_empty() {
-        knock_many(d, 1.0, Screen::Solid, BK, &skins);
-        fill_many(d, Paint::solid(Ink::Yellow, 0.3 + 0.6 * b), &skins);
-        fill_many(d, Paint::solid(Ink::Pink, 0.03 + b * (0.08 + 0.36 * l.crust)), &skins);
+        knock_many(d, 1.0, Screen::Solid, PLATES_ALL, &skins);
+        fill_many(d, Paint::solid(Ink::Yellow, 0.3 + 0.6 * b).add(), &skins);
+        fill_many(d, Paint::solid(Ink::Pink, 0.03 + b * (0.08 + 0.36 * l.crust)).add(), &skins);
     }
     for sh in &shapes {
-        d.stroke_p(Paint::solid(Ink::Key, 0.8), l.lw(DETAIL * 0.8), sh, true);
+        d.stroke_p(Paint::solid(Ink::Key, 0.8).add(), l.lw(DETAIL * 0.8), sh, true);
     }
 }
 
@@ -1023,13 +1026,14 @@ fn cuts(d: &mut DrawList, l: &Loaf) {
         let n = bl.path.len();
         let w = l.lw(DETAIL) * (0.4 + 0.6 * o);
         let far: Vec<V2> = (0..n).map(|j| bl.far_edge[j] - bl.nrm[j] * (w * 0.35)).collect();
-        if l.lod > 0.2 {
-            d.stroke_p(Paint::solid(Ink::Key, 0.85), w, &far, false);
+        {
+            // Always drawn: on small loaves it is what makes a cut read as an opening.
+            d.stroke_p(Paint::solid(Ink::Key, 0.85).add(), w, &far, false);
         }
         let lip_w = l.lw(INNER * (0.55 + 0.75 * bl.ear)) * (0.4 + 0.6 * o);
         let lip_at: Vec<V2> =
             (0..n).map(|j| bl.ear_edge[j] + bl.nrm[j] * (lip_w * 0.4 * bl.prof[j].sqrt())).collect();
-        d.fill_p(Paint::solid(Ink::Key, 1.0), &taper(&lip_at, |t| lip_w * 0.5 * arch(t, 0.5)));
+        d.fill_p(Paint::solid(Ink::Key, 1.0).add(), &taper(&lip_at, |t| lip_w * 0.5 * arch(t, 0.5)));
         if bl.ear > 0.15 && l.lod > 0.3 {
             let crest: Vec<V2> =
                 (0..n).map(|j| bl.ear_edge[j] + bl.nrm[j] * (lip_w * 1.05 * bl.prof[j].sqrt())).collect();
@@ -1041,20 +1045,24 @@ fn cuts(d: &mut DrawList, l: &Loaf) {
     for bl in &l.blooms {
         let o = bl.open.min(1.0);
         let raw = 1.0 - o;
-        // Clear what the crust printed there; pink and yellow are printed "Over" below.
-        d.knock_p(1.0, Screen::Solid, BK, &bl.lens);
-        let pink = 0.3 * raw + o * (0.06 + 0.26 * c * b);
-        d.fill(Ink::Yellow, 0.75 * raw + (0.72 + 0.14 * b) * o, &bl.lens);
-        d.ht(Ink::Pink, pink, &bl.lens);
+        // Clear what the crust printed there, then print the grigne (see the clip rule).
+        d.knock(&bl.lens);
+        // Small loaves keep their openings paler so the cut still reads at icon size.
+        let pink = (0.3 * raw + o * (0.06 + 0.26 * c * b)) * (0.55 + 0.45 * l.lod.min(1.0) * 2.0).min(1.0);
+        let yellow = 0.75 * raw + (0.72 + 0.14 * b) * o;
+        d.fill_p(Paint::solid(Ink::Yellow, yellow).add(), &bl.lens);
+        d.fill_p(Paint::ht(Ink::Pink, pink).add(), &bl.lens);
         if raw > 0.05 {
-            d.fill(Ink::Key, 0.1 * raw, &bl.lens);
+            d.fill_p(Paint::solid(Ink::Key, 0.1 * raw).add(), &bl.lens);
         }
         if o > 0.12 && l.lod > 0.2 {
-            // The torn far lip is crust, browned; the heart of the opening stays pale.
+            // The torn far lip is crust, browned; the heart of the opening stays paler.
             d.fill_p(Paint::solid(Ink::Pink, (pink + 0.24 * o).min(0.7)).add(), &bl.strip(0.8, 1.02));
             d.fill_p(Paint::solid(Ink::Key, (0.08 + 0.24 * c) * b * o).add(), &bl.strip(0.9, 1.02));
-            d.fill(Ink::Yellow, 0.58 + 0.1 * b, &bl.strip(0.28, 0.72));
-            d.fill(Ink::Pink, pink * 0.35, &bl.strip(0.28, 0.72));
+            let heart = bl.strip(0.28, 0.72);
+            let paler = (1.0 - (0.58 + 0.1 * b) / yellow.max(0.01)).clamp(0.0, 1.0);
+            d.knock_p(paler, Screen::Solid, 1 << Ink::Yellow.idx(), &heart);
+            d.knock_p(0.65, Screen::Solid, 1 << Ink::Pink.idx(), &heart);
             if l.lod > 0.3 && bl.len * l.k > 40.0 {
                 fibres(d, l, bl);
             }
@@ -1081,7 +1089,7 @@ fn cuts(d: &mut DrawList, l: &Loaf) {
         let n = bl.path.len();
         let slit_w = l.lw(DETAIL * 1.35);
         let slit = taper(&bl.path, |t| slit_w * arch(t, 0.45) * (0.4 + 0.6 * raw));
-        d.fill_p(Paint::solid(Ink::Key, 0.9 * raw.sqrt()), &slit);
+        d.fill_p(Paint::solid(Ink::Key, 0.9 * raw.sqrt()).add(), &slit);
         let lip: Vec<V2> = (0..n).map(|j| bl.ear_edge[j] + bl.nrm[j] * (slit_w * 0.45)).collect();
         d.knock_p(0.9 * raw, Screen::Solid, PYK, &taper(&lip, |t| slit_w * 0.5 * arch(t, 0.8)));
         let shade: Vec<V2> = (0..n).map(|j| bl.far_edge[j] - bl.nrm[j] * (slit_w * 0.4)).collect();
@@ -1208,8 +1216,8 @@ fn toppings(d: &mut DrawList, l: &Loaf, t: Topping) {
                 pts.iter().map(|(p, a)| speck(*p, len * 0.55, len * 0.45, *a, 10)).collect();
             let shadows: Vec<Vec<V2>> = dots.iter().map(|p| translate_poly(p, v2(0.3, 0.45) * len)).collect();
             fill_many(d, Paint::solid(Ink::Key, 0.3).add(), &shadows);
-            fill_many(d, Paint::solid(Ink::Key, 0.95), &dots);
-            fill_many(d, Paint::solid(Ink::Blue, 0.7), &dots);
+            fill_many(d, Paint::solid(Ink::Key, 0.95).add(), &dots);
+            fill_many(d, Paint::solid(Ink::Blue, 0.7).add(), &dots);
             let glints: Vec<Vec<V2>> = pts
                 .iter()
                 .map(|(p, _)| speck(*p + v2(-0.15, -0.18) * len, len * 0.14, len * 0.14, 0.0, 6))
@@ -1240,13 +1248,13 @@ fn toppings(d: &mut DrawList, l: &Loaf, t: Topping) {
                 bodies.push(body);
             }
             fill_many(d, Paint::solid(Ink::Key, 0.42).add(), &shadows);
-            knock_many(d, 1.0, Screen::Solid, BK, &bodies);
+            knock_many(d, 1.0, Screen::Solid, PLATES_ALL, &bodies);
             if sesame {
-                fill_many(d, Paint::solid(Ink::Yellow, 0.18 + 0.2 * b), &bodies);
-                fill_many(d, Paint::solid(Ink::Pink, 0.03 + 0.1 * b * (0.4 + l.crust)), &bodies);
+                fill_many(d, Paint::solid(Ink::Yellow, 0.18 + 0.2 * b).add(), &bodies);
+                fill_many(d, Paint::solid(Ink::Pink, 0.03 + 0.1 * b * (0.4 + l.crust)).add(), &bodies);
             } else {
-                fill_many(d, Paint::solid(Ink::Yellow, 0.24 + 0.2 * b), &bodies);
-                fill_many(d, Paint::solid(Ink::Pink, 0.05 + 0.14 * b * (0.5 + l.crust)), &bodies);
+                fill_many(d, Paint::solid(Ink::Yellow, 0.24 + 0.2 * b).add(), &bodies);
+                fill_many(d, Paint::solid(Ink::Pink, 0.05 + 0.14 * b * (0.5 + l.crust)).add(), &bodies);
             }
             knock_many(d, 0.9, Screen::Solid, PY, &shines);
             let w = l.lw(1.1);
@@ -1257,7 +1265,7 @@ fn toppings(d: &mut DrawList, l: &Loaf, t: Topping) {
                 rings.push(body.iter().map(|q| c + (*q - c) * (1.0 + w * 0.5 / r)).collect::<Vec<V2>>());
                 rings.push(body.iter().map(|q| c + (*q - c) * (1.0 - w * 0.5 / r).max(0.2)).collect());
             }
-            fill_many(d, Paint::solid(Ink::Key, 0.7), &rings);
+            fill_many(d, Paint::solid(Ink::Key, 0.7).add(), &rings);
         }
     }
 }
@@ -1463,23 +1471,25 @@ pub fn crumb_slice(d: &mut DrawList, w: f32, h: f32, openness: f32, crust: f32, 
     if valley.len() >= 2 {
         let band = taper(&valley, |t| h * 0.034 * arch(t, 0.35));
         d.clipped(&body, |d| {
-            d.fill_p(Paint::solid(Ink::Yellow, 0.85), &band);
-            d.fill_p(Paint::ht(Ink::Pink, 0.28 + 0.2 * crust), &band);
-            d.fill_p(Paint::ht(Ink::Key, 0.08 + 0.12 * crust), &band);
+            d.knock(&band);
+            d.fill_p(Paint::solid(Ink::Yellow, 0.85).add(), &band);
+            d.fill_p(Paint::ht(Ink::Pink, 0.28 + 0.2 * crust).add(), &band);
+            d.fill_p(Paint::ht(Ink::Key, 0.08 + 0.12 * crust).add(), &band);
         });
     }
     let crumb = chaikin(&inset(&plain, thick), 1, true);
     d.clip_push(&body);
     d.knock(&crumb);
     // Denser, warmer crumb against the crust; pale and glossy in the heart (flat tints:
-    // a screen would be too coarse for crumb this fine).
-    d.fill(Ink::Yellow, 0.4, &crumb);
-    d.fill(Ink::Pink, 0.07, &crumb);
+    // a screen would be too coarse for crumb this fine). The crumb runs under the ear's
+    // notch, which the body clip cuts away, so it prints knock-then-add / knock-to-lighten.
+    d.fill_p(Paint::solid(Ink::Yellow, 0.4).add(), &crumb);
+    d.fill_p(Paint::solid(Ink::Pink, 0.07).add(), &crumb);
     let ring = chaikin(&inset(&crumb, |_| h * 0.03), 1, true);
-    d.fill(Ink::Yellow, 0.31, &ring);
-    d.fill(Ink::Pink, 0.035, &ring);
+    d.knock_p(1.0 - 0.31 / 0.4, Screen::Solid, 1 << Ink::Yellow.idx(), &ring);
+    d.knock_p(0.5, Screen::Solid, 1 << Ink::Pink.idx(), &ring);
     let heart = chaikin(&inset(&ring, |_| h * 0.06), 1, true);
-    d.fill(Ink::Yellow, 0.25, &heart);
+    d.knock_p(1.0 - 0.25 / 0.31, Screen::Solid, 1 << Ink::Yellow.idx(), &heart);
     d.knock_p(1.0, Screen::Solid, 1 << Ink::Pink.idx(), &heart);
 
     // Alveoli: coalesced, irregular, stretched along the rise; big in the upper heart,
@@ -1548,15 +1558,17 @@ pub fn crumb_slice(d: &mut DrawList, w: f32, h: f32, openness: f32, crust: f32, 
         }
         bodies.push(poly.clone());
     }
-    fill_many(d, Paint::solid(Ink::Yellow, 0.62), &bodies);
-    fill_many(d, Paint::solid(Ink::Pink, 0.22 + 0.06 * crust), &bodies);
-    fill_many(d, Paint::solid(Ink::Key, 0.12), &bodies);
-    fill_many(d, Paint::solid(Ink::Key, 0.34), &shades);
-    fill_many(d, Paint::solid(Ink::Pink, 0.34), &shades);
+    knock_many(d, 1.0, Screen::Solid, PLATES_ALL, &bodies);
+    fill_many(d, Paint::solid(Ink::Yellow, 0.62).add(), &bodies);
+    fill_many(d, Paint::solid(Ink::Pink, 0.22 + 0.06 * crust).add(), &bodies);
+    fill_many(d, Paint::solid(Ink::Key, 0.12).add(), &bodies);
+    fill_many(d, Paint::solid(Ink::Key, 0.25).add(), &shades);
+    fill_many(d, Paint::solid(Ink::Pink, 0.16).add(), &shades);
     knock_many(d, 0.5, Screen::Solid, PLATES_COLOR, &floors);
-    fill_many(d, Paint::solid(Ink::Pink, 0.3), &specks);
-    fill_many(d, Paint::solid(Ink::Key, 0.3), &specks);
-    fill_many(d, Paint::solid(Ink::Yellow, 0.6), &specks);
+    knock_many(d, 1.0, Screen::Solid, PLATES_ALL, &specks);
+    fill_many(d, Paint::solid(Ink::Pink, 0.3).add(), &specks);
+    fill_many(d, Paint::solid(Ink::Key, 0.3).add(), &specks);
+    fill_many(d, Paint::solid(Ink::Yellow, 0.6).add(), &specks);
     // Fine pores everywhere between the cavities.
     let mut pores = Vec::new();
     let pr = (w * 0.0035).max(0.7);
@@ -1567,14 +1579,14 @@ pub fn crumb_slice(d: &mut DrawList, w: f32, h: f32, openness: f32, crust: f32, 
         }
         pores.push(speck(p, pr * rng.range(0.8, 1.6), pr * rng.range(0.6, 1.0), rng.range(0.0, PI), 8));
     }
-    fill_many(d, Paint::solid(Ink::Key, 0.22), &pores);
-    fill_many(d, Paint::solid(Ink::Pink, 0.2), &pores);
+    fill_many(d, Paint::solid(Ink::Key, 0.22).add(), &pores);
+    fill_many(d, Paint::solid(Ink::Pink, 0.2).add(), &pores);
     // A faint hairline on the biggest cavities' upper rims.
     for (c, poly, size) in &holes {
         if *size > w * 0.03 {
             let rim: Vec<V2> = poly.iter().filter(|q| q.y < c.y - size * 0.1).cloned().collect();
             if rim.len() >= 3 {
-                d.stroke_p(Paint::solid(Ink::Key, 0.6), DETAIL * 0.55 * lw, &rim, false);
+                d.stroke_p(Paint::solid(Ink::Key, 0.6).add(), DETAIL * 0.55 * lw, &rim, false);
             }
         }
     }
@@ -1697,5 +1709,128 @@ mod tests {
             loaf_top(&mut d, &LoafView { cuts: cuts.clone(), bake, ..LoafView::default() });
             assert!(finite(&d));
         }
+    }
+
+    /// The rasteriser's "Over" fills zero out masked-off pixels in the same span, so an
+    /// Over fill inside a clip must stay within it (see the module docs). Walk every bakery
+    /// asset's clip stack and flag Over ink that overhangs the active clip.
+    fn over_violations(d: &DrawList) -> Vec<String> {
+        use crate::draw::Mode;
+        use crate::geom::{dist_to_polyline, point_in_poly};
+        let mut clips: Vec<Vec<V2>> = Vec::new();
+        let mut bad = Vec::new();
+        let inside = |p: V2, clip: &[V2], margin: f32| -> bool {
+            let mut ring = clip.to_vec();
+            ring.push(clip[0]);
+            let dist = dist_to_polyline(p, &ring);
+            if point_in_poly(p, clip) { dist >= margin - 0.75 } else { dist <= 0.75 && margin <= 0.0 }
+        };
+        for (i, c) in d.cmds.iter().enumerate() {
+            match &c.op {
+                Op::ClipPush => {
+                    let poly = match &c.shape {
+                        S::Poly(p) => p.clone(),
+                        S::PolysEo(ps) => ps.first().cloned().unwrap_or_default(),
+                        S::Line { pts, .. } => pts.clone(),
+                    };
+                    clips.push(poly);
+                }
+                Op::ClipPop => {
+                    clips.pop();
+                }
+                Op::Ink(p) if p.mode == Mode::Over && !clips.is_empty() => {
+                    let (pts, margin): (Vec<V2>, f32) = match &c.shape {
+                        S::Poly(p) => (p.clone(), 0.0),
+                        S::PolysEo(ps) => (ps.iter().flatten().cloned().collect(), 0.0),
+                        S::Line { pts, width, .. } => (pts.clone(), width * 0.5),
+                    };
+                    for clip in clips.iter().filter(|c| c.len() >= 3) {
+                        if let Some(q) = pts.iter().find(|q| !inside(**q, clip, margin)) {
+                            bad.push(format!("#{i} {:?} at {q:?}", c.op));
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        bad
+    }
+
+    #[test]
+    fn over_fills_stay_inside_their_clips() {
+        use crate::art::{jar, oven, treats};
+        use crate::content::Treat;
+        let mut all = Vec::new();
+        // Loaves in every state, including a freehand swipe that runs off the edge, drawn
+        // standalone and inside Toasty's window (which clips them).
+        let off_edge =
+            CutView { pts: vec![v2(-1.3, 0.6), v2(0.0, 0.2), v2(1.3, -0.5)], bloom: 1.0, ear: 1.0 };
+        for (i, p) in Pattern::ALL.iter().enumerate() {
+            for t in [0.0, 0.5, 1.0] {
+                let mut cuts: Vec<CutView> = template(*p, Shape::Boule)
+                    .into_iter()
+                    .map(|pts| CutView { pts, bloom: t, ear: t })
+                    .collect();
+                cuts.push(CutView { bloom: t, ear: t, ..off_edge.clone() });
+                let v = LoafView {
+                    recipe: Recipe::ALL[i % Recipe::ALL.len()],
+                    bake: t,
+                    spring: t,
+                    crust: t,
+                    cuts,
+                    stencil: Some(Stencil::ALL[i % Stencil::ALL.len()]),
+                    topping: Some(Topping::ALL[i % Topping::ALL.len()]),
+                    seed: i as u32,
+                    ..LoafView::default()
+                };
+                let mut d = DrawList::new();
+                loaf_top(&mut d, &v);
+                all.extend(over_violations(&d).into_iter().map(|e| format!("loaf {p:?} t={t}: {e}")));
+                let mut d = DrawList::new();
+                let ov = oven::OvenView { glow: t, open: 0.0, steam: t, ..Default::default() };
+                oven::oven(&mut d, &ov, |d| {
+                    d.with(crate::geom::Xf::at(v2(-46.0, -150.0)), |d| {
+                        loaf_top(d, &LoafView { r: 40.0, ..v.clone() })
+                    })
+                });
+                all.extend(over_violations(&d).into_iter().map(|e| format!("oven {p:?} t={t}: {e}")));
+            }
+        }
+        for open in [0.3, 1.0] {
+            let mut d = DrawList::new();
+            oven::oven(&mut d, &oven::OvenView { open, glow: 0.5, ..Default::default() }, |_| {});
+            all.extend(over_violations(&d).into_iter().map(|e| format!("open oven: {e}")));
+        }
+        let mut d = DrawList::new();
+        crumb_slice(&mut d, 200.0, 130.0, 0.9, 0.6, 3);
+        all.extend(over_violations(&d).into_iter().map(|e| format!("crumb: {e}")));
+        for (i, (hooch, rise, band)) in
+            [(false, 0.55, 0.35), (false, 1.0, 0.28), (true, 0.2, 0.3)].iter().enumerate()
+        {
+            let mut d = DrawList::new();
+            let v = jar::JarView {
+                hooch: *hooch,
+                rise: *rise,
+                band: *band,
+                pep: 0.9,
+                seed: i as u32,
+                ..Default::default()
+            };
+            jar::jar(&mut d, &v);
+            all.extend(over_violations(&d).into_iter().map(|e| format!("jar {i}: {e}")));
+        }
+        for t in Treat::ALL {
+            for raw in [false, true] {
+                let mut d = DrawList::new();
+                if raw {
+                    treats::treat_raw(&mut d, t, 130.0, 1);
+                } else {
+                    treats::treat(&mut d, t, 130.0, 1);
+                }
+                all.extend(over_violations(&d).into_iter().map(|e| format!("{t:?} raw={raw}: {e}")));
+            }
+        }
+        assert!(all.is_empty(), "{} Over fills overhang their clip:\n{}", all.len(), all.join("\n"));
     }
 }

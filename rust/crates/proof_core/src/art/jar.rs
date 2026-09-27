@@ -5,6 +5,9 @@
 //! jar with rounded shoulders; creamy starter inside with bubbles pressed against the glass;
 //! a face printed on the glass in the clear zone beside the rubber band (the band never
 //! crosses it); a torn masking-tape name label; and a gingham cloth cap tied with string.
+//!
+//! Clip rule (the rasteriser's "Over" fills zero out masked-off pixels in the same span):
+//! everything printed inside a clip that may overhang it is added (`.add()`) or knocked.
 
 use super::style::{DETAIL, OUTER, contact_shadow};
 use super::{Expr, face, zzz};
@@ -109,19 +112,20 @@ fn outline(k: f32) -> Vec<V2> {
     p
 }
 
-/// Where the face sits: the roomier side of the rubber band, never crossed by it, and
-/// clear of the tape. Returns (centre, size).
+/// Where the face sits, printed on the glass: above the rubber band when there is room
+/// (leaving the settled starter below the band to the microbes), otherwise below it; never
+/// crossed by the band and clear of the tape. Returns (centre, size).
 fn face_spot(band_y: f32) -> (V2, f32) {
     let lo = -BASE - 6.0;
     let hi = TAPE_CENTER.y + TAPE_H * 0.5 + 6.0;
     let above = (band_y - 10.0) - hi;
     let below = lo - (band_y + 10.0);
-    let (c, room) = if above >= below {
+    let (c, room) = if above >= 40.0 || above >= below {
         ((band_y - 10.0 + hi) * 0.5, above)
     } else {
         ((lo + band_y + 10.0) * 0.5, below)
     };
-    (v2(0.0, c), (room * 1.7).clamp(56.0, 98.0))
+    (v2(0.0, c), (room * 1.7).clamp(60.0, 86.0))
 }
 
 /// A tapered filled stroke along `pts` with half-width `hw(t)`.
@@ -277,25 +281,26 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
 
     // Creamy starter (flat tints: a screen reads as cork at this size), settling denser
     // towards the bottom and a touch warmer against the glass.
-    d.fill(Ink::Yellow, 0.36, &goop);
-    d.fill(Ink::Pink, 0.05, &goop);
+    d.fill_p(Paint::solid(Ink::Yellow, 0.36).add(), &goop);
+    d.fill_p(Paint::solid(Ink::Pink, 0.05).add(), &goop);
     let depth = -y_top - BASE;
-    for (h, y, p) in [(0.5f32, 0.43f32, 0.07f32), (0.25, 0.5, 0.09)] {
+    // Each layer adds a little more density on top of the one above it.
+    for (h, y, p) in [(0.5f32, 0.11f32, 0.021f32), (0.25, 0.12, 0.022)] {
         let top = -BASE - depth * h;
         let layer = chaikin(
             &[v2(-HALF, top + 4.0), v2(0.0, top - 3.0), v2(HALF, top + 4.0), v2(HALF, 10.0), v2(-HALF, 10.0)],
             2,
             true,
         );
-        d.fill(Ink::Yellow, y, &layer);
-        d.fill(Ink::Pink, p, &layer);
+        d.fill_p(Paint::solid(Ink::Yellow, y).add(), &layer);
+        d.fill_p(Paint::solid(Ink::Pink, p).add(), &layer);
     }
     // The top: a darker, glossier skin under the surface line.
     let skin: Vec<V2> = surface.iter().map(|p| *p + v2(0.0, 4.5)).collect();
-    d.stroke_p(Paint::solid(Ink::Yellow, 0.52), 7.0, &skin, false);
-    d.stroke_p(Paint::solid(Ink::Pink, 0.1), 7.0, &skin, false);
-    d.stroke_p(Paint::solid(Ink::Pink, 0.45), 2.0, &surface, false);
-    d.stroke_p(Paint::solid(Ink::Key, 0.35), 1.2, &surface, false);
+    d.stroke_p(Paint::solid(Ink::Yellow, 0.25).add(), 7.0, &skin, false);
+    d.stroke_p(Paint::solid(Ink::Pink, 0.05).add(), 7.0, &skin, false);
+    d.stroke_p(Paint::solid(Ink::Pink, 0.45).add(), 2.0, &surface, false);
+    d.stroke_p(Paint::solid(Ink::Key, 0.35).add(), 1.2, &surface, false);
 
     // A soft film left on the glass where the starter peaked and fell back.
     if hooch || v.band > v.rise + 0.05 {
@@ -309,21 +314,31 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
             })
             .collect();
         film.extend(crest);
-        d.fill(Ink::Yellow, 0.14, &film);
+        d.fill_p(Paint::solid(Ink::Yellow, 0.14).add(), &film);
         for i in 0..7 {
             let x = -64.0 + i as f32 * 21.0 + rng.range(-6.0, 6.0);
             let y1 = peak + rng.range(4.0, 14.0);
             let y0 = y_top - rng.range(2.0, 8.0);
             if y1 < y0 {
                 let drip = vec![v2(x, y1), v2(x + rng.range(-1.5, 1.5), y0)];
-                d.stroke_p(Paint::solid(Ink::Yellow, 0.22), rng.range(3.0, 6.0), &drip, false);
+                d.stroke_p(Paint::solid(Ink::Yellow, 0.22).add(), rng.range(3.0, 6.0), &drip, false);
             }
         }
     }
 
+    // Bubbles press against the glass but stay inside it (clear of the rounded corners).
+    let cavity = outline(WALL);
+    let mut ring = cavity.clone();
+    ring.push(cavity[0]);
+    let within = |p: V2, margin: f32| {
+        crate::geom::point_in_poly(p, &cavity) && crate::geom::dist_to_polyline(p, &ring) >= margin
+    };
     // Keep-out zones: the face, the band and the tape.
     let clear = |p: V2, r: f32| -> bool {
-        let in_face = (p.x - face_c.x).abs() < face_s * 0.62 + r && (p.y - face_c.y).abs() < face_s * 0.3 + r;
+        // The face spans the eyes (a little above centre) down to the blush and mouth.
+        let dy = p.y - face_c.y;
+        let in_face =
+            (p.x - face_c.x).abs() < face_s * 0.53 + r && dy > -face_s * 0.16 - r && dy < face_s * 0.24 + r;
         let in_band = (p.y - band_y).abs() < 7.0 + r;
         let in_tape = (p.y - TAPE_CENTER.y).abs() < TAPE_H * 0.5 + r && p.x.abs() < TAPE_W * 0.5 + r;
         !(in_face || in_band || in_tape)
@@ -345,7 +360,7 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
             let x = edge * (HALF - 16.0);
             let r = 1.6 + 5.4 * hr * hr * (0.45 + pep);
             let p = v2(x, y);
-            if !clear(p, r) {
+            if !clear(p, r) || !within(p, r + 1.5) {
                 continue;
             }
             if r > 3.0 {
@@ -357,8 +372,8 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
         for (p, r) in &rings {
             let c = circle(*p, *r);
             d.knock_p(0.85, Screen::Solid, PLATES_COLOR, &c);
-            d.fill(Ink::Yellow, 0.12, &c);
-            d.stroke_p(Paint::solid(Ink::Key, 0.55), DETAIL * 0.5, &c, true);
+            d.fill_p(Paint::solid(Ink::Yellow, 0.1).add(), &c);
+            d.stroke_p(Paint::solid(Ink::Key, 0.55).add(), DETAIL * 0.5, &c, true);
             d.stroke_p(
                 Paint::solid(Ink::Pink, 0.35).add(),
                 DETAIL * 0.9,
@@ -384,11 +399,11 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
         while i < n && tries < 90 {
             tries += 1;
             let ph = rng.range(0.0, TAU);
-            let x = rng.range(-HALF + 21.0, HALF - 21.0);
+            let x = rng.range(-HALF + 25.0, HALF - 25.0);
             let y = rng.range(top, bottom);
             let bob = (v.t * (1.4 + pep) + ph).sin() * (1.5 + 2.5 * pep);
             let c = v2(x, y + bob);
-            let r = 10.0;
+            let r = 9.5;
             if !clear(c, r + 2.0) || placed.iter().any(|q| q.dist(c) < 2.5 * r) {
                 continue;
             }
@@ -409,17 +424,17 @@ fn starter(d: &mut DrawList, v: &JarView, y_top: f32, face_c: V2, face_s: f32, b
         let top = y_top - 18.0;
         let layer = vec![v2(-HALF, top), v2(HALF, top), v2(HALF, y_top + 2.0), v2(-HALF, y_top + 2.0)];
         d.knock(&layer);
-        d.fill(Ink::Blue, 0.2, &layer);
-        d.fill(Ink::Key, 0.12, &layer);
-        d.fill(Ink::Yellow, 0.22, &layer);
+        d.fill_p(Paint::solid(Ink::Blue, 0.2).add(), &layer);
+        d.fill_p(Paint::solid(Ink::Key, 0.12).add(), &layer);
+        d.fill_p(Paint::solid(Ink::Yellow, 0.22).add(), &layer);
         let lower = vec![
             v2(-HALF, y_top - 7.0),
             v2(HALF, y_top - 7.0),
             v2(HALF, y_top + 2.0),
             v2(-HALF, y_top + 2.0),
         ];
-        d.fill(Ink::Key, 0.2, &lower);
-        d.line(Ink::Key, DETAIL * 0.8, &[v2(-HALF, top), v2(HALF, top)]);
+        d.fill_p(Paint::solid(Ink::Key, 0.1).add(), &lower);
+        d.stroke_p(Paint::solid(Ink::Key, 1.0).add(), DETAIL * 0.8, &[v2(-HALF, top), v2(HALF, top)], false);
         d.knock_p(0.8, Screen::Solid, PLATES_ALL, &capsule(v2(-54.0, top + 5.0), v2(6.0, top + 5.0), 1.6));
     }
 }
@@ -462,7 +477,7 @@ fn glass(d: &mut DrawList, body: &[V2], cavity: &[V2]) {
             true,
         );
         d.knock_p(0.7, Screen::Solid, PLATES_COLOR, &base);
-        d.fill(Ink::Blue, 0.24, &base);
+        d.fill_p(Paint::solid(Ink::Blue, 0.24).add(), &base);
         d.knock_p(0.9, Screen::Solid, PLATES_ALL, &capsule(v2(-44.0, -6.5), v2(10.0, -7.0), 1.8));
     });
     // Where the glass wall meets the inside.
@@ -593,7 +608,7 @@ fn cloth_cap(d: &mut DrawList, v: &JarView) {
             let (u0, u1) = (-1.0 + 2.0 * c as f32 / cols as f32, -1.0 + 2.0 * (c + 1) as f32 / cols as f32);
             let mut p: Vec<V2> = (0..=14).map(|i| f(u0, i as f32 / 14.0)).collect();
             p.extend((0..=14).rev().map(|i| f(u1, i as f32 / 14.0)));
-            d.fill(ink, tone, &p);
+            d.fill_p(Paint::solid(ink, tone).add(), &p);
         }
         for r in (0..rows).step_by(2) {
             let (s0, s1) = (r as f32 / rows as f32, (r + 1) as f32 / rows as f32);

@@ -3,6 +3,10 @@
 //! All three are seen in a gentle 3/4 view with the house light from the top-left, and the
 //! raw versions share the finished silhouettes: batter in the paper cup, a pale coil of
 //! cinnamon dough, a matte shaped ring. The finishing swipe bakes, glazes or seeds them.
+//!
+//! Clip rule (the rasteriser's "Over" fills zero out masked-off pixels in the same span):
+//! inside a clip, anything that may overhang the clip is added (`.add()`) or knocked, and
+//! gradients are nested copies of the clip shape itself.
 
 use super::style::{DETAIL, INNER, OUTER, contact_shadow};
 use crate::content::Treat;
@@ -124,7 +128,12 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
             // Every other pleat faces away from the light.
             let q = vec![at(u0, true), at(u1, true), at(u1, false), at(u0, false)];
             d.fill_p(Paint::solid(Ink::Key, 0.1 + 0.08 * u0).add(), &q);
-            d.stroke_p(Paint::solid(Ink::Key, 0.5), DETAIL * 0.55 * k, &[at(u0, true), at(u0, false)], false);
+            d.stroke_p(
+                Paint::solid(Ink::Key, 0.5).add(),
+                DETAIL * 0.55 * k,
+                &[at(u0, true), at(u0, false)],
+                false,
+            );
         }
         // Lit on the left, rolling into shade on the right.
         d.knock_p(
@@ -191,16 +200,13 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
         d.fill(Ink::Yellow, 0.9, &dome);
         d.clipped(&dome, |d| {
             // A lit dome: pale gold on the top-left crown, toasty at the rim and underside.
+            let crown = v2(-0.1 * s, base - 0.26 * s);
             let steps = [(1.0f32, 0.6f32), (0.84, 0.48), (0.68, 0.36), (0.5, 0.26), (0.32, 0.17)];
-            for (i, (sc, tone)) in steps.iter().enumerate() {
-                let c = v2(-0.1 * s, -0.2 * s) * (i as f32 / 4.0);
-                d.ht(
-                    Ink::Pink,
-                    *tone,
-                    &ellipse(c + v2(0.0, base - 0.12 * s), 0.52 * s * sc, 0.4 * s * sc, 0.0),
-                );
+            for (sc, tone) in steps {
+                let ring: Vec<V2> = dome.iter().map(|q| crown + (*q - crown) * sc).collect();
+                d.ht(Ink::Pink, tone, &ring);
             }
-            d.ht(Ink::Key, 0.16, &ellipse(v2(0.08 * s, base + 0.05 * s), 0.52 * s, 0.075 * s, 0.0));
+            d.ht_add(Ink::Key, 0.16, &ellipse(v2(0.08 * s, base + 0.05 * s), 0.52 * s, 0.075 * s, 0.0));
             // Crackled top: the crust split into plates showing lighter crumb.
             let cracks = [
                 vec![v2(-0.22, -0.26), v2(-0.1, -0.23), v2(0.0, -0.3), v2(0.14, -0.26), v2(0.24, -0.3)],
@@ -212,8 +218,8 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
                 let pts: Vec<V2> = chaikin(&c.iter().map(|p| *p * s).collect::<Vec<_>>(), 2, false);
                 let gap = taper(&pts, |t| 0.014 * s * arch(t, 0.6));
                 d.knock(&gap);
-                d.fill(Ink::Yellow, 0.55, &gap);
-                d.ht(Ink::Pink, 0.15, &gap);
+                d.fill_p(Paint::solid(Ink::Yellow, 0.55).add(), &gap);
+                d.fill_p(Paint::ht(Ink::Pink, 0.15).add(), &gap);
                 let lip: Vec<V2> = pts.iter().map(|p| *p + v2(0.004, 0.011) * s).collect();
                 d.fill_p(Paint::solid(Ink::Key, 0.55).add(), &taper(&lip, |t| 0.006 * s * arch(t, 0.6)));
             }
@@ -253,7 +259,10 @@ fn muffin(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
         d.fill(Ink::Yellow, 0.42, &batter);
         d.fill(Ink::Pink, 0.06, &batter);
         d.clipped(&batter, |d| {
-            d.fill(Ink::Pink, 0.12, &ellipse(v2(0.08 * s, rim_y + 0.07 * s), 0.36 * s, 0.07 * s, 0.0));
+            d.fill_p(
+                Paint::solid(Ink::Pink, 0.12).add(),
+                &ellipse(v2(0.08 * s, rim_y + 0.07 * s), 0.36 * s, 0.07 * s, 0.0),
+            );
             d.knock_p(
                 0.75,
                 Screen::Solid,
@@ -339,7 +348,7 @@ fn bun(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
                 false,
             );
             d.stroke_p(
-                Paint::solid(Ink::Key, if baked { 0.45 } else { 0.25 }),
+                Paint::solid(Ink::Key, if baked { 0.45 } else { 0.25 }).add(),
                 DETAIL * 0.6 * k,
                 &seam,
                 false,
@@ -370,11 +379,11 @@ fn bun(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
         let flank: Vec<V2> = (0..=n).map(|i| spiral(i as f32 / n as f32, -0.08)).collect();
         d.stroke_p(Paint::ht(Ink::Pink, if baked { 0.8 } else { 0.35 }).add(), 0.055 * s, &flank, false);
         let ridge: Vec<V2> = (0..=n).map(|i| spiral(i as f32 / n as f32, -0.22)).collect();
-        d.stroke_p(Paint::solid(Ink::Yellow, if baked { 0.55 } else { 0.25 }), 0.03 * s, &ridge, false);
+        d.stroke_p(Paint::solid(Ink::Yellow, if baked { 0.55 } else { 0.25 }).add(), 0.03 * s, &ridge, false);
         d.knock_p(0.4, Screen::Solid, PLATES_COLOR, &taper(&ridge, |t| 0.007 * s * arch(t, 0.3)));
         // Cinnamon swirl in the groove.
-        d.stroke_p(Paint::solid(Ink::Key, if baked { 0.66 } else { 0.48 }), 0.026 * s, &groove, false);
-        d.stroke_p(Paint::solid(Ink::Pink, 0.8), 0.026 * s, &groove, false);
+        d.stroke_p(Paint::solid(Ink::Key, if baked { 0.66 } else { 0.48 }).add(), 0.026 * s, &groove, false);
+        d.stroke_p(Paint::solid(Ink::Pink, 0.8).add(), 0.026 * s, &groove, false);
     });
     d.outline(Ink::Key, DETAIL * 1.1 * k, &top);
 
@@ -436,12 +445,12 @@ fn bun(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
                 eo
             });
             let shade: Vec<V2> = icing.iter().map(|q| *q + v2(-0.012, -0.02) * s).collect();
-            d.fill_eo(Paint::ht(Ink::Blue, 0.3), &[icing.clone(), shade]);
+            d.fill_eo(Paint::ht(Ink::Blue, 0.3).add(), &[icing.clone(), shade]);
         });
         for dp in &drips {
             d.clipped(dp, |d| {
                 let shade: Vec<V2> = dp.iter().map(|q| *q + v2(-0.01, -0.004) * s).collect();
-                d.fill_eo(Paint::ht(Ink::Blue, 0.3), &[dp.clone(), shade]);
+                d.fill_eo(Paint::ht(Ink::Blue, 0.3).add(), &[dp.clone(), shade]);
             });
             let bulb = dp.iter().fold(v2(0.0, f32::MIN), |a, q| if q.y > a.y { *q } else { a });
             d.knock(&circle(bulb + v2(-0.008 * s, -0.018 * s), 0.008 * s));
@@ -474,9 +483,10 @@ fn bagel(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
     d.knock(&outer);
     d.fill(Ink::Yellow, y, &outer);
     d.clipped(&outer, |d| {
-        for (i, (sc, tone)) in [(1.0f32, p + 0.12), (0.8, p), (0.6, p - 0.1)].iter().enumerate() {
-            let cc = c + v2(-0.06 * s, -0.05 * s) * i as f32;
-            d.ht(Ink::Pink, tone.max(0.02), &ellipse(cc, rx * sc * 1.05, ry * sc * 1.05, 0.0));
+        let lit = c + v2(-0.14 * s, -0.12 * s);
+        for (sc, tone) in [(1.0f32, p + 0.12), (0.8, p), (0.6, p - 0.1)] {
+            let ring: Vec<V2> = outer.iter().map(|q| lit + (*q - lit) * sc).collect();
+            d.ht(Ink::Pink, tone.max(0.02), &ring);
         }
         d.ht(Ink::Key, key, &outer);
         // The ring rounds down into the hole: a soft shaded collar.
@@ -523,10 +533,10 @@ fn bagel(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
     // The hole: its far inner wall in shade, the table showing below.
     d.knock(&hole);
     d.clipped(&hole, |d| {
-        let wall = ellipse(hole_c + v2(0.0, -0.035 * s), 0.15 * s, 0.08 * s, 0.0);
-        d.fill(Ink::Yellow, y, &wall);
-        d.ht(Ink::Pink, (p + 0.28).min(0.95), &wall);
-        d.ht(Ink::Key, key + 0.3, &wall);
+        d.fill(Ink::Yellow, y, &hole);
+        d.ht(Ink::Pink, (p + 0.28).min(0.95), &hole);
+        d.ht(Ink::Key, key + 0.3, &hole);
+        d.knock(&ellipse(hole_c + v2(0.0, 0.045 * s), 0.15 * s, 0.08 * s, 0.0));
         d.ht_add(Ink::Blue, 0.34, &ellipse(hole_c + v2(0.02 * s, 0.05 * s), 0.13 * s, 0.05 * s, 0.0));
     });
     d.outline(Ink::Key, INNER * 0.85 * k, &hole);

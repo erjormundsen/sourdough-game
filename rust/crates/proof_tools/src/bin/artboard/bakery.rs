@@ -54,6 +54,59 @@ fn look_view(l: &Look, r: f32, bake: f32, bloom: f32, seed: u32) -> LoafView {
 }
 
 pub fn render(out: &Path, scale: f32) {
+    if std::env::var("BAKERY_DBG").is_ok() {
+        let sc: f32 = std::env::var("BAKERY_DBG").ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
+        let mut b = Board::new(420.0, 420.0, sc, Edition::Dawn);
+        b.put(v2(210.0, 400.0), |d| {
+            let v = OvenView { glow: 0.9, steam: 1.0, t: 0.3, expr: Expr::Happy, ..OvenView::default() };
+            oven(d, &v, |d| {
+                let looks: [Look; 2] = [
+                    (Recipe::Country, Some(Pattern::Ear), Shape::Boule, 0.5, Some(Stencil::Heart), None),
+                    (Recipe::Country, Some(Pattern::Cross), Shape::Boule, 0.5, None, Some(Topping::Sesame)),
+                ];
+                for (i, x) in [-46.0f32, 46.0].iter().enumerate() {
+                    if std::env::var("NO_LOAVES").is_ok() {
+                        continue;
+                    }
+                    let mut lv = look_view(&looks[i], 40.0, 0.5, 0.4, 7);
+                    lv.spring = 0.5;
+                    d.with(Xf::at(v2(*x, -150.0)), |d| loaf_top(d, &lv));
+                }
+            })
+        });
+        b.save(&out.join("dbg_oven.png"));
+        {
+            use proof_raster::{RasterConfig, rasterize};
+            let mut full = DrawList::new();
+            let v = OvenView { glow: 0.9, steam: 1.0, t: 0.3, expr: Expr::Happy, ..OvenView::default() };
+            oven(&mut full, &v, |_| {});
+            let cfg = RasterConfig { scale: sc, ..RasterConfig::default() };
+            let bounds = full.bounds();
+            let probe = v2(110.0, -140.0);
+            let mut prev = [0u8; 5];
+            for k in 1..=full.cmds.len() {
+                let mut p = DrawList::new();
+                p.cmds = full.cmds[..k].to_vec();
+                let pl = rasterize(&p, &cfg, bounds);
+                let px = ((probe.x - pl.origin.x) * pl.scale) as u32;
+                let py = ((probe.y - pl.origin.y) * pl.scale) as u32;
+                let i = (py * pl.width + px) as usize;
+                let bk = pl.backing.as_ref().map(|b| b[i]).unwrap_or(0);
+                let cur = [pl.rgba[i * 4], pl.rgba[i * 4 + 1], pl.rgba[i * 4 + 2], pl.rgba[i * 4 + 3], bk];
+                if cur != prev {
+                    println!(
+                        "#{:3} {:?} -> plates {:?} backing {}",
+                        k - 1,
+                        full.cmds[k - 1].op,
+                        &cur[..4],
+                        cur[4]
+                    );
+                    prev = cur;
+                }
+            }
+        }
+        return;
+    }
     if std::env::var("BAKERY_BENCH").is_ok() {
         bench();
         return;

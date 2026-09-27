@@ -5,6 +5,10 @@
 //! bottom-hinged door with a chrome-framed window (the loaves glow inside on a wire rack), a
 //! chrome handle, vent slots, bullet feet and a little chimney that puffs steam. Light comes
 //! from the top-left.
+//!
+//! Clip rule (the rasteriser's "Over" fills zero out masked-off pixels in the same span):
+//! inside a clip, an "Over" fill must lie within the clip shape; to darken use `.add()`,
+//! to lighten use a knock. Both of those are always clip-safe.
 
 use super::style::{DETAIL, INNER, OUTER, contact_shadow};
 use super::{Expr, face};
@@ -61,7 +65,7 @@ fn chrome(d: &mut DrawList, poly: &[V2], hl: &[V2], dark: &[V2], line: f32) {
     d.fill(Ink::Key, 0.14, poly);
     d.clipped(poly, |d| {
         if dark.len() >= 3 {
-            d.fill(Ink::Key, 0.42, dark);
+            d.fill_p(Paint::solid(Ink::Key, 0.36).add(), dark);
         }
         if hl.len() >= 3 {
             d.knock(hl);
@@ -144,10 +148,16 @@ pub fn oven(d: &mut DrawList, v: &OvenView, inside: impl FnOnce(&mut DrawList)) 
     }
 
     if open > 0.01 {
-        cavity(d, glow, open);
+        cavity(d, glow);
         open_door(d, open);
     } else {
         door(d, glow, v.t, inside);
+    }
+
+    // Hinge knuckles at the bottom corners of the door (in front of it, open or closed).
+    for x in [-DOOR_HALF + 22.0, DOOR_HALF - 34.0] {
+        let knuckle = rounded_rect(rect(x, HINGE - 5.0, 12.0, 10.0), 4.0);
+        chrome(d, &knuckle, &capsule(v2(x + 3.0, HINGE - 2.0), v2(x + 9.0, HINGE - 2.0), 1.0), &[], DETAIL);
     }
 
     steam(d, v);
@@ -170,7 +180,7 @@ fn controls(d: &mut DrawList, v: &OvenView) {
         d.fill(Ink::Blue, 0.2, &knob);
         d.fill(Ink::Key, 0.12, &knob);
         d.clipped(&knob, |d| {
-            d.fill(Ink::Key, 0.38, &ellipse(c + v2(7.0, 9.0), 20.0, 15.0, 0.6));
+            d.fill_p(Paint::solid(Ink::Key, 0.34).add(), &ellipse(c + v2(7.0, 9.0), 20.0, 15.0, 0.6));
             d.knock(&ellipse(c + v2(-8.0, -9.0), 9.0, 5.0, -0.7));
         });
         // Knurled grip ring.
@@ -239,8 +249,10 @@ fn door(d: &mut DrawList, glow: f32, t: f32, inside: impl FnOnce(&mut DrawList))
         d.fill(Ink::Blue, 0.14 * dark, &glass);
         d.fill(Ink::Yellow, 0.25 * glow, &glass);
         if glow > 0.02 {
-            for (i, k) in [1.0f32, 0.78, 0.56, 0.36].iter().enumerate() {
-                let e = ellipse(v2(0.0, y0 + h * 0.62), w * 0.62 * k, h * 0.7 * k, 0.0);
+            let heart = v2(0.0, y0 + h * 0.62);
+            for (i, k) in [0.9f32, 0.72, 0.52, 0.32].iter().enumerate() {
+                let e: Vec<V2> =
+                    glass.iter().map(|p| heart + (*p - heart).mul_v(v2(*k, *k * 1.08))).collect();
                 let f = (i + 1) as f32 / 4.0;
                 d.fill(Ink::Yellow, (glow * (0.45 + 0.5 * f)).min(1.0), &e);
                 d.fill(Ink::Pink, glow * (0.34 - 0.2 * f), &e);
@@ -253,11 +265,16 @@ fn door(d: &mut DrawList, glow: f32, t: f32, inside: impl FnOnce(&mut DrawList))
             }
         }
         // Back-wall seams for depth.
-        d.stroke_p(Paint::solid(Ink::Key, 0.25), 2.0, &[v2(x0 + 18.0, y0), v2(x0 + 30.0, y0 + h)], false);
         d.stroke_p(
             Paint::solid(Ink::Key, 0.25),
             2.0,
-            &[v2(x0 + w - 18.0, y0), v2(x0 + w - 30.0, y0 + h)],
+            &[v2(x0 + 18.0, y0 + 3.0), v2(x0 + 30.0, y0 + h - 3.0)],
+            false,
+        );
+        d.stroke_p(
+            Paint::solid(Ink::Key, 0.25),
+            2.0,
+            &[v2(x0 + w - 18.0, y0 + 3.0), v2(x0 + w - 30.0, y0 + h - 3.0)],
             false,
         );
         // The heating element: a coil glowing across the top.
@@ -275,8 +292,8 @@ fn door(d: &mut DrawList, glow: f32, t: f32, inside: impl FnOnce(&mut DrawList))
         }
         // Wire rack the loaves sit on.
         let rack_y = y0 + h - 14.0;
-        d.line(Ink::Key, 2.6, &[v2(x0, rack_y), v2(x0 + w, rack_y)]);
-        d.line(Ink::Key, 1.6, &[v2(x0, rack_y + 7.0), v2(x0 + w, rack_y + 7.0)]);
+        d.line(Ink::Key, 2.6, &[v2(x0 + 8.0, rack_y), v2(x0 + w - 8.0, rack_y)]);
+        d.line(Ink::Key, 1.6, &[v2(x0 + 13.0, rack_y + 7.0), v2(x0 + w - 13.0, rack_y + 7.0)]);
         for i in 0..9 {
             let x = x0 + 12.0 + i as f32 * (w - 24.0) / 8.0;
             d.line(Ink::Key, 1.4, &[v2(x, rack_y), v2(x, rack_y + 7.0)]);
@@ -335,18 +352,20 @@ fn door(d: &mut DrawList, glow: f32, t: f32, inside: impl FnOnce(&mut DrawList))
 }
 
 /// The open oven: the cavity in perspective, glowing, with its rack.
-fn cavity(d: &mut DrawList, glow: f32, open: f32) {
+fn cavity(d: &mut DrawList, glow: f32) {
     let (x0, x1, y0, y1) = (-DOOR_HALF + 4.0, DOOR_HALF - 4.0, DOOR_TOP + 4.0, HINGE - 2.0);
     let mouth = rounded_rect(rect(x0, y0, x1 - x0, y1 - y0), 24.0);
     d.backing(&mouth);
     d.fill(Ink::Key, 0.72, &mouth);
+    // The walls overhang the mouth's rounded corners, so they only lighten (knock) or
+    // darken (add) what the mouth printed.
     d.clipped(&mouth, |d| {
         // The back wall, smaller and lit from within.
         let back = rounded_rect(rect(x0 + 34.0, y0 + 26.0, x1 - x0 - 68.0, y1 - y0 - 50.0), 12.0);
         d.fill(Ink::Key, 0.5, &back);
         d.fill(Ink::Yellow, 0.25 + 0.6 * glow, &back);
         d.fill(Ink::Pink, 0.3 * glow, &back);
-        // Side walls converge on it.
+        // Side walls converge on it: the left one catches the glow, the right is in shade.
         for sx in [-1.0f32, 1.0] {
             let wall = vec![
                 v2(sx * (x1 - 2.0), y0),
@@ -354,12 +373,16 @@ fn cavity(d: &mut DrawList, glow: f32, open: f32) {
                 v2(sx * (x1 - 34.0), y1 - 24.0),
                 v2(sx * (x1 - 2.0), y1),
             ];
-            d.fill(Ink::Key, if sx < 0.0 { 0.55 } else { 0.8 }, &wall);
-            d.fill(Ink::Yellow, 0.3 * glow, &wall);
+            if sx < 0.0 {
+                d.knock_p(0.24, Screen::Solid, 1 << Ink::Key.idx(), &wall);
+            } else {
+                d.fill_p(Paint::solid(Ink::Key, 0.29).add(), &wall);
+            }
+            d.fill_p(Paint::solid(Ink::Yellow, 0.3 * glow).add(), &wall);
         }
         // Floor, rack rails and the glowing element.
         let floor = vec![v2(x0, y1), v2(x0 + 34.0, y1 - 24.0), v2(x1 - 34.0, y1 - 24.0), v2(x1, y1)];
-        d.fill(Ink::Key, 0.65, &floor);
+        d.knock_p(0.1, Screen::Solid, 1 << Ink::Key.idx(), &floor);
         let coil: Vec<V2> = (0..=30)
             .map(|i| {
                 let u = i as f32 / 30.0;
@@ -387,12 +410,11 @@ fn cavity(d: &mut DrawList, glow: f32, open: f32) {
         d.stroke_p(
             Paint::solid(Ink::Yellow, 0.35),
             2.6,
-            &[v2(x0 + 12.0, rack_y + 18.0), v2(x1 - 12.0, rack_y + 18.0)],
+            &[v2(x0 + 14.0, rack_y + 18.0), v2(x1 - 14.0, rack_y + 18.0)],
             false,
         );
     });
     d.outline(Ink::Key, INNER, &mouth);
-    let _ = open;
 }
 
 /// The door swung down towards us, showing its inner face in perspective.

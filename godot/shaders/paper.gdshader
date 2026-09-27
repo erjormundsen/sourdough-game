@@ -1,14 +1,15 @@
-// Proof — the sheet of paper everything is printed on.
+// Proof — the sheet of uncoated paper everything is printed on: warm stock with tooth, fibres and
+// cloudy formation (see riso_press.gdshaderinc).
 shader_type canvas_item;
 
-uniform vec3 paper : source_color = vec3(0.97, 0.95, 0.9);
-uniform sampler2D grain_tex : repeat_enable, filter_linear;
+#include "res://shaders/riso_press.gdshaderinc"
+
+varying highp vec2 sp;
+
+void vertex() {
+	sp = press_screen_pos(CANVAS_MATRIX, MODEL_MATRIX, VERTEX);
+}
 
 void fragment() {
-	vec4 g = texture(grain_tex, FRAGCOORD.xy / 256.0);
-	vec3 col = paper * (1.0 - 0.035 * g.r - 0.03 * g.g);
-	col.b -= 0.004;
-	// Soft fibres.
-	col *= 1.0 - 0.02 * g.b;
-	COLOR = vec4(col, 1.0);
+	COLOR = vec4(paper_color(texture(fine_tex, sp / fine_size), texture(coarse_tex, sp / coarse_px)), 1.0);
 }

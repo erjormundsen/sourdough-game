@@ -62,22 +62,25 @@ pub enum Edition {
 }
 
 impl Edition {
+    /// Each edition is a set of real Riso drum inks on a natural uncoated stock (hex values
+    /// are the printed swatches of the named RISO inks; dark keys are printed dense, as riso
+    /// studios double-hit their darkest drum).
     pub fn palette(self) -> Palette {
         match self {
-            // Morning bake: coral-pink, sunflower, aqua, warm brown key.
+            // Morning bake: Fluorescent Orange (coral), Sunflower, Aqua, Brown key.
             Edition::Dawn => Palette {
-                paper: Rgb::hex(0xFBF3E6),
-                inks: [Rgb::hex(0xFF6F91), Rgb::hex(0xFFD23F), Rgb::hex(0x62C6E0), Rgb::hex(0x6B3F35)],
+                paper: Rgb::hex(0xFBF3E4),
+                inks: [Rgb::hex(0xFF7477), Rgb::hex(0xFFB511), Rgb::hex(0x5EC8E5), Rgb::hex(0x6A3D33)],
             },
-            // Shop day: fluorescent pink, yellow, riso blue, navy key.
+            // Shop day: Fluorescent Pink, Yellow, Blue, Federal Blue key.
             Edition::Daylight => Palette {
-                paper: Rgb::hex(0xF8F2E6),
-                inks: [Rgb::hex(0xFF5DAE), Rgb::hex(0xFFE24A), Rgb::hex(0x3E8FD0), Rgb::hex(0x2E3A6B)],
+                paper: Rgb::hex(0xF8F2E5),
+                inks: [Rgb::hex(0xFF48B0), Rgb::hex(0xFFE800), Rgb::hex(0x0078BF), Rgb::hex(0x34457A)],
             },
-            // Evening prep: berry pink, lamp-light sunflower, violet-blue, plum key.
+            // Evening prep: berry pink, Melon lamp-light, violet, Plum key.
             Edition::Dusk => Palette {
-                paper: Rgb::hex(0xF1E6D6),
-                inks: [Rgb::hex(0xF0609E), Rgb::hex(0xF9BE4B), Rgb::hex(0x6A6CC4), Rgb::hex(0x33264F)],
+                paper: Rgb::hex(0xF2E7D5),
+                inks: [Rgb::hex(0xEC5A95), Rgb::hex(0xFFAE3B), Rgb::hex(0x6C66C0), Rgb::hex(0x35264F)],
             },
         }
     }

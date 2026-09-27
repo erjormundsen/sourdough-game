@@ -35,7 +35,7 @@ uniform vec4 starve_y = vec4(0.025, 0.035, -0.025, 0.012);
 uniform vec4 trap = vec4(0.12, 0.0, 0.14, 0.05);
 
 // Screen position in px (top-left origin) of a vertex; call from vertex().
-vec2 press_screen_pos(mat4 canvas, mat4 model, vec2 vertex) {
+highp vec2 press_screen_pos(highp mat4 canvas, highp mat4 model, highp vec2 vertex) {
 	return (canvas * model * vec4(vertex, 0.0, 1.0)).xy;
 }
 

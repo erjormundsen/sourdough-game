@@ -183,6 +183,41 @@ fn scene(args: &[String]) {
     println!("wrote {out}");
 }
 
+/// Box-filter an image down by an integer factor: `press shrink in.png out.png k`. A phone
+/// screenshot shrunk 2× on a desktop monitor is roughly what the eye gets from the phone.
+fn shrink(args: &[String]) {
+    let [src, dst, k, ..] = args else {
+        eprintln!("usage: press shrink in.png out.png k");
+        return;
+    };
+    let k: u32 = k.parse().unwrap_or(2).max(1);
+    let Some((w, h, px)) = load(src) else {
+        eprintln!("cannot read {src}");
+        return;
+    };
+    let (ow, oh) = (w / k, h / k);
+    let mut out = vec![255u8; (ow * oh * 4) as usize];
+    for y in 0..oh {
+        for x in 0..ow {
+            let mut acc = [0u32; 3];
+            for dy in 0..k {
+                for dx in 0..k {
+                    let i = (((y * k + dy) * w + x * k + dx) * 4) as usize;
+                    for c in 0..3 {
+                        acc[c] += px[i + c] as u32;
+                    }
+                }
+            }
+            let o = ((y * ow + x) * 4) as usize;
+            for c in 0..3 {
+                out[o + c] = (acc[c] / (k * k)) as u8;
+            }
+        }
+    }
+    proof_tools::write_png(std::path::Path::new(dst), ow, oh, &out).unwrap();
+    println!("wrote {dst} ({ow}x{oh})");
+}
+
 /// Compare the same region of two images (e.g. a game screenshot and `press scene` output):
 /// `press diff a.png ax ay b.png bx by w h` prints the mean absolute difference per channel.
 fn diff(args: &[String]) {
@@ -231,9 +266,11 @@ fn main() {
         Some("zoom") => zoom(&args[1..]),
         Some("scene") => scene(&args[1..]),
         Some("diff") => diff(&args[1..]),
+        Some("shrink") => shrink(&args[1..]),
         _ => eprintln!(
             "usage: press bench [runs] | press zoom in.png out.png x y w h [k] | \
-             press scene out.png [scale] [grain] [height] | press diff a.png ax ay b.png bx by w h"
+             press scene out.png [scale] [grain] [height] | press diff a.png ax ay b.png bx by w h | \
+             press shrink in.png out.png k"
         ),
     }
 }

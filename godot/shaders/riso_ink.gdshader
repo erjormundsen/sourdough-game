@@ -36,7 +36,8 @@ void vertex() {
 	sp = press_screen_pos(CANVAS_MATRIX, MODEL_MATRIX, VERTEX);
 }
 
-vec2 drum(vec2 d, vec2 shift, vec4 a) {
+// A drum's displacement (px) at `d` px from the page centre.
+highp vec2 drum(highp vec2 d, highp vec2 shift, highp vec4 a) {
 	return shift + vec2(a.x * d.x + a.y * d.y, a.z * d.x + a.w * d.y);
 }
 
@@ -61,7 +62,8 @@ void fragment() {
 	if (v.x + v.y + v.z + v.w < 0.002) {
 		COLOR = vec4(1.0);
 	} else {
-		vec4 c = texture(coarse_tex, sp / coarse_px);
+		// Explicit LOD: implicit derivatives are undefined inside non-uniform control flow.
+		vec4 c = textureLod(coarse_tex, sp / coarse_px, 0.0);
 		vec4 cov = press_ink(v, f, m, c, sp / screen) * fade;
 		vec3 col = mix(vec3(1.0), ink0, cov.x) * mix(vec3(1.0), ink1, cov.y)
 			* mix(vec3(1.0), ink2, cov.z) * mix(vec3(1.0), ink3, cov.w);

@@ -94,7 +94,7 @@ impl PressTextures {
             .normalized(0.0, 1.0)
             .add_scaled(&Field::white(n, 12).blur(0.9 * s).normalized(0.0, 1.0), 0.8)
             .normalized(0.5, 0.16);
-        // Fibres: short curly strands, some lighter, some darker than the sheet.
+        // Fibres: short, gently bent strands, some lighter, some darker than the sheet.
         let fibres = fibre_field(n, s);
         // Ragged-edge noise.
         let edge = Field::white(n, 21).blur(0.33 * s).normalized(0.5, 0.2);
@@ -314,13 +314,14 @@ impl Default for PressStyle {
             // Colour drums sit 1.5–2 units out (a well-kept machine on a good day); the key
             // drum, printed last, is nearly true so faces stay crisp.
             offsets: [v2(1.6, 1.15), v2(-1.35, 0.8), v2(0.7, -1.45), v2(0.08, 0.1)],
-            // Rotation/stretch add up to ~1.5 units more toward the corners; the kick flings
-            // each drum further along its own way (≤ ~9 units, inside the plates' margin).
+            // Rotation/stretch add up to ~1 unit more toward the corners; the kick flings
+            // each drum further along its own way (peak ≲ 9 units, inside the plates' 10-unit
+            // margin so no ink is clipped at a sprite's edge).
             drums: [
-                drum(0.0014, 0.0008, -0.0005, 3.0, 2.1, 0.0022),
-                drum(-0.001, -0.0006, 0.0011, -2.9, 1.7, -0.0018),
-                drum(0.0008, 0.0004, 0.0009, 1.5, -3.1, 0.0012),
-                drum(0.0001, 0.0, 0.0, 0.4, 0.5, 0.0002),
+                drum(0.0009, 0.0005, -0.0003, 4.0, 2.8, 0.0012),
+                drum(-0.0007, -0.0004, 0.0006, -4.1, 2.4, -0.001),
+                drum(0.0005, 0.0003, 0.0005, 2.1, -4.3, 0.0008),
+                drum(0.0001, 0.0, 0.0, 0.5, 0.6, 0.0001),
             ],
             kick: 0.0,
             warp: 0.3,
@@ -434,6 +435,32 @@ mod tests {
             let mean: f32 = tex.rgba.chunks_exact(4).map(|p| p[ch] as f32 / 255.0).sum::<f32>() / n;
             assert!((mean - 0.5).abs() < 0.03, "channel {ch} mean {mean}");
         }
+    }
+
+    #[test]
+    fn kicked_drums_stay_inside_the_plate_margin() {
+        // Plates carry `RasterConfig::pad` units of empty margin; a full print-in kick at the
+        // corners of a tall phone page must not push any ink past it (it would be clipped).
+        let st = PressStyle::default();
+        let pad = crate::RasterConfig::default().pad;
+        let reach = |k: usize, kick: f32, half: V2| -> f32 {
+            let (sh, a) = st.drums[k].affine(st.offsets[k], kick);
+            [half, v2(-half.x, half.y), v2(half.x, -half.y), half * -1.0]
+                .iter()
+                .map(|d| (sh + v2(a[0] * d.x + a[1] * d.y, a[2] * d.x + a[3] * d.y)).len() + st.warp)
+                .fold(0.0, f32::max)
+        };
+        for k in 0..4 {
+            // An extremely tall page (720×2000 units), full kick: still inside the margin.
+            let r = reach(k, 1.0, v2(360.0, 1000.0));
+            assert!(r < pad, "drum {k} kicked reaches {r} units");
+            // A tall phone (720×1560) at rest: misregistration stays a hair, even in corners.
+            let r = reach(k, 0.0, v2(360.0, 780.0));
+            assert!(r < 3.4, "drum {k} rests {r} units out");
+        }
+        // The key drum stays nearly in register so faces stay crisp.
+        let (sh, _) = st.drums[3].affine(st.offsets[3], 0.0);
+        assert!(sh.len() < 0.2);
     }
 
     #[test]

@@ -46,7 +46,8 @@ impl Default for RasterConfig {
         RasterConfig {
             scale: 1.0,
             pitch: 4.6,
-            // Classic screen angles (C 15°, Y 0°, M 75°, K 45°) so overlapping dots don't moiré.
+            // Classic process angles (pink 15°, yellow 0°, blue 75°, key 45°): overlapping
+            // screens make fine rosettes instead of moiré.
             angles: [15f32.to_radians(), 0.0, 75f32.to_radians(), 45f32.to_radians()],
             pad: 10.0,
             grain: 0.85,

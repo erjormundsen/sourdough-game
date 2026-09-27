@@ -1,25 +1,36 @@
 //! Shop: regulars visit one at a time with icon orders; tap or drag a good onto them.
+//!
+//! Composition: the customer stands behind the glass display case, framed by the shop
+//! window; their speech bubble floats in the window above them with a hint tab on its
+//! corner; the goods sit on the case's shelves; a "Not today" sign stands on the counter.
 
 use super::{Ctx, Ptr, Screen, new_root};
 use crate::riso::{Art, TextSpec, list};
 use crate::sfx::Sfx;
-use crate::ui::{Button, Floater, Hud, Panel};
+use crate::ui::{self, Button, Floater, Hud, Panel};
 use godot::classes::{Label, Node, Node2D};
 use godot::prelude::*;
 use proof_core::anim::{ease_in_out, ease_out_back};
 use proof_core::art::bread::loaf_top;
-use proof_core::art::critters::{CritterView, critter};
+use proof_core::art::critters::{BUST_H, CritterView, HEAD_C, critter};
 use proof_core::art::icons::{Icon, icon};
-use proof_core::art::scenes::{Backdrop, backdrop, counter_front, counter_top};
+use proof_core::art::scenes::{
+    Backdrop, CASE_LOAF_R, CASE_TREAT, backdrop, case_cols, case_rows, counter_front, counter_top,
+};
 use proof_core::art::treats::treat;
 use proof_core::art::{Expr, props};
 use proof_core::bake::Good;
 use proof_core::content::Treat;
 use proof_core::customer::{self, Reaction};
 use proof_core::draw::DrawList;
-use proof_core::geom::{V2, Xf, rect, v2};
+use proof_core::geom::{V2, Xf, rect, rounded_rect, v2};
 use proof_core::ink::Ink;
 use proof_core::state::{Action, Event, ServeResult};
+
+/// Customers are drawn a little larger than their footprint.
+const CRITTER_SCALE: f32 = 1.3;
+const BUBBLE_W: f32 = 440.0;
+const BUBBLE_H: f32 = 250.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Btn {
@@ -61,7 +72,9 @@ pub struct Shop {
     critter: Art,
     critter_expr: Expr,
     bubble: Art,
+    bubble_name: Gd<Label>,
     bubble_text: Gd<Label>,
+    bubble_tag: Gd<Label>,
     state: Visitor,
     cells: Vec<Cell>,
     drag: Option<(usize, V2, bool)>,
@@ -74,25 +87,52 @@ pub struct Shop {
     stand: V2,
     t: f32,
     shown_order: bool,
+    receipt_shot: bool,
+    top: f32,
+    hh: f32,
 }
 
 impl Shop {
     pub fn new(ctx: &mut Ctx, host: &mut Gd<Node2D>) -> Shop {
         let root = new_root(host);
         let mut rn: Gd<Node> = root.clone().upcast();
-        let h = ctx.lay.h;
-        let bg = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| backdrop(d, Backdrop::Shopfront, h)));
-        let counter_y = counter_top(Backdrop::Shopfront, h);
+        let top = ctx.lay.top;
+        let hh = ctx.lay.h - top - ctx.lay.bottom;
+        let bg = ctx.riso.art(&mut rn, v2(0.0, top), &list(|d| backdrop(d, Backdrop::Shopfront, hh)));
+        let counter_y = top + counter_top(Backdrop::Shopfront, hh);
         let stand = v2(360.0, counter_y + 40.0);
         let mut critter = ctx.riso.art(&mut rn, v2(1000.0, stand.y), &DrawList::new());
-        critter.extra_scale = 1.3;
-        critter.set_scale(1.3);
-        let front = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| counter_front(d, Backdrop::Shopfront, h)));
-        let bubble_y = (stand.y - 610.0).max(340.0);
+        critter.extra_scale = CRITTER_SCALE;
+        critter.set_scale(CRITTER_SCALE);
+        let front = ctx.riso.art(&mut rn, v2(0.0, top), &list(|d| counter_front(d, Backdrop::Shopfront, hh)));
+        // The bubble floats in the window just above the customer's head (its tail points
+        // down at them), never under the masthead.
+        let head_top = stand.y - BUST_H * CRITTER_SCALE;
+        let bubble_y = (head_top - 64.0 - BUBBLE_H * 0.5).max(top + ui::MAST_H + 26.0 + BUBBLE_H * 0.5);
         let bubble = ctx.riso.art(&mut rn, v2(360.0, bubble_y), &DrawList::new());
         let mut bn = bubble.as_node();
-        let bubble_text =
-            ctx.riso.text(&mut bn, &TextSpec::new("", rect(-210.0, -92.0, 420.0, 70.0), 24.0).wrap());
+        let (bw, bh) = (BUBBLE_W, BUBBLE_H);
+        let bubble_name = ctx.riso.text(
+            &mut bn,
+            &TextSpec::new("", rect(-bw * 0.5 + 36.0, -bh * 0.5 + 18.0, bw - 120.0, 36.0), 25.0)
+                .bold()
+                .left(),
+        );
+        let bubble_text = ctx.riso.text(
+            &mut bn,
+            &TextSpec::new("", rect(-bw * 0.5 + 36.0, -bh * 0.5 + 54.0, bw - 72.0, 64.0), 21.0)
+                .wrap()
+                .left()
+                .plain(),
+        );
+        let mut bubble_tag = ctx.riso.text(
+            &mut bn,
+            &TextSpec::new("Pre-order!", rect(-bw * 0.5 - 30.0, -bh * 0.5 - 30.0, 140.0, 34.0), 19.0)
+                .bold()
+                .plain(),
+        );
+        bubble_tag.set_rotation(-0.14);
+        bubble_tag.set_visible(false);
         let hud = Hud::new(ctx, &mut rn, "Daylight edition · shop");
         let mut s = Shop {
             root,
@@ -103,7 +143,9 @@ impl Shop {
             critter,
             critter_expr: Expr::Content,
             bubble,
+            bubble_name,
             bubble_text,
+            bubble_tag,
             state: Visitor::None,
             cells: Vec::new(),
             drag: None,
@@ -116,22 +158,31 @@ impl Shop {
             stand,
             t: 0.0,
             shown_order: false,
+            receipt_shot: false,
+            top,
+            hh,
         };
         s.build_cells(ctx);
         let mut rn2 = s.rn.clone();
-        let hint_y = s.bubble.pos().y - 60.0;
-        let hint = Button::round(ctx, &mut rn2, v2(612.0, hint_y), 28.0, Ink::Yellow, Icon::Book);
+        let corner = v2(360.0 + bw * 0.5 - 14.0, bubble_y - bh * 0.5 + 10.0);
+        let hint = Button::round(ctx, &mut rn2, corner, 27.0, Ink::Yellow, Icon::Book);
         s.btns.add(Btn::Hint, hint);
-        let sorry =
-            Button::pill(ctx, &mut rn2, rect(540.0, counter_y - 120.0, 160.0, 58.0), "Not today", Ink::Blue);
+        let sorry = Button::sign(ctx, &mut rn2, v2(606.0, counter_y + 6.0), 158.0, 64.0, "Not today");
         s.btns.add(Btn::Sorry, sorry);
         s.bubble.set_visible(false);
+        s.set_hint_visible(false);
         s.next_visitor(ctx);
         ctx.note(
             "shop",
             "Your regulars are here! Read their order bubble, then tap (or drag) a goodie onto them. Everyone pays — happy friends tip!",
         );
         s
+    }
+
+    fn set_hint_visible(&mut self, v: bool) {
+        if let Some(b) = self.btns.get(Btn::Hint) {
+            b.set_visible(v);
+        }
     }
 
     fn visitor(&self, ctx: &Ctx) -> Option<proof_core::state::Visit> {
@@ -156,16 +207,34 @@ impl Shop {
             }
         }
         let mut rn = self.rn.clone();
-        let top = self.counter_y + 110.0;
-        for (i, k) in keys.iter().enumerate().take(8) {
-            let home = v2(95.0 + (i % 4) as f32 * 176.0, top + (i / 4) as f32 * 150.0 - 10.0);
+        let rows = case_rows(self.hh);
+        let cols = case_cols();
+        // Like a real bakery case: breads on the top shelf, pastries below (overflowing
+        // into the other shelf only when one is full).
+        let loaves: Vec<CellKey> = keys.iter().copied().filter(|k| matches!(k, CellKey::Loaf(_))).collect();
+        let pastries: Vec<CellKey> =
+            keys.iter().copied().filter(|k| matches!(k, CellKey::Treat(_))).collect();
+        let mut top_row: Vec<CellKey> = loaves.iter().copied().take(4).collect();
+        let mut low_row: Vec<CellKey> = loaves.iter().copied().skip(4).chain(pastries).collect();
+        while low_row.len() > 4 && top_row.len() < 4 {
+            top_row.push(low_row.remove(0));
+        }
+        low_row.truncate(4);
+        let placed: Vec<(CellKey, V2)> = top_row
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (*k, v2(cols[i], self.top + rows[0])))
+            .chain(low_row.iter().enumerate().map(|(i, k)| (*k, v2(cols[i], self.top + rows[1]))))
+            .collect();
+        for (k, home) in placed.iter() {
+            let (k, home) = (k, *home);
             let (d, count) = match k {
                 CellKey::Loaf(id) => {
                     let l = ctx.state.shelf.iter().find_map(|g| match g {
                         Good::Loaf(l) if l.id == *id => Some(l.clone()),
                         _ => None,
                     });
-                    (l.map(|l| list(|dl| loaf_top(dl, &l.view(62.0)))).unwrap_or_default(), 0)
+                    (l.map(|l| list(|dl| loaf_top(dl, &l.view(CASE_LOAF_R)))).unwrap_or_default(), 0)
                 }
                 CellKey::Treat(t) => {
                     let n = ctx
@@ -175,7 +244,20 @@ impl Shop {
                         .filter(|g| matches!(g, Good::Treat(x) if x.kind == *t))
                         .count();
                     let t = *t;
-                    (list(|dl| treat(dl, t, 120.0, 1)), n)
+                    let d = list(|dl| {
+                        // A little stack: the rest peek out behind the front one.
+                        if n > 1 {
+                            dl.with(Xf::at(v2(-18.0, -12.0)).scaled(0.9), |dl| treat(dl, t, CASE_TREAT, 2));
+                        }
+                        treat(dl, t, CASE_TREAT, 1);
+                        if n > 1 {
+                            let tag = rounded_rect(rect(26.0, 8.0, 50.0, 30.0), 8.0);
+                            dl.backing(&tag);
+                            dl.fill(Ink::Yellow, 0.2, &tag);
+                            dl.outline(Ink::Key, 2.4, &tag);
+                        }
+                    });
+                    (d, n)
                 }
             };
             let art = ctx.riso.art(&mut rn, home, &d);
@@ -183,7 +265,7 @@ impl Shop {
                 let mut an = art.as_node();
                 Some(ctx.riso.text(
                     &mut an,
-                    &TextSpec::new(format!("×{count}"), rect(10.0, 20.0, 70.0, 40.0), 26.0).bold(),
+                    &TextSpec::new(format!("×{count}"), rect(26.0, 7.0, 50.0, 30.0), 20.0).bold().plain(),
                 ))
             } else {
                 None
@@ -211,27 +293,40 @@ impl Shop {
         let Some(v) = self.visitor(ctx) else { return };
         let wants = v.order.wants.clone();
         let pre = v.preorder;
+        let (bw, bh) = (BUBBLE_W, BUBBLE_H);
+        // The tail points down at the customer's head.
+        let head = self.stand + HEAD_C * CRITTER_SCALE - self.bubble.pos();
+        let tip = v2(-24.0, (head.y - 130.0).clamp(bh * 0.5 + 34.0, bh * 0.5 + 96.0));
         let d = list(|d| {
-            props::bubble(d, 460.0, 250.0, v2(-20.0, 190.0));
+            props::bubble(d, bw, bh, tip);
             let n = wants.len() as f32;
+            let y = bh * 0.5 - 62.0;
             for (i, w) in wants.iter().enumerate() {
-                let x = (i as f32 - (n - 1.0) * 0.5) * 120.0;
-                icon(d, Icon::Want(*w), v2(x, 40.0), 44.0);
+                let x = (i as f32 - (n - 1.0) * 0.5) * 132.0;
+                let slot = proof_core::geom::circle(v2(x, y), 48.0);
+                d.fill(Ink::Yellow, 0.22, &slot);
+                d.stroke_p(proof_core::draw::Paint::solid(Ink::Key, 0.35), 2.0, &slot, true);
+                icon(d, Icon::Want(*w), v2(x, y), 38.0);
             }
             if wants.len() == 2 {
-                d.line(Ink::Key, 5.0, &[v2(-10.0, 40.0), v2(10.0, 40.0)]);
-                d.line(Ink::Key, 5.0, &[v2(0.0, 30.0), v2(0.0, 50.0)]);
+                let c = v2(0.0, y);
+                d.line(Ink::Key, 5.0, &[c + v2(-10.0, 0.0), c + v2(10.0, 0.0)]);
+                d.line(Ink::Key, 5.0, &[c + v2(0.0, -10.0), c + v2(0.0, 10.0)]);
             }
             if pre {
-                d.with(Xf::at(v2(-170.0, -118.0)).rotated(-0.12), |d| props::tape(d, 130.0, 34.0, Ink::Pink));
+                d.with(Xf::at(v2(-bw * 0.5 + 40.0, -bh * 0.5 - 12.0)).rotated(-0.14), |d| {
+                    props::tape(d, 150.0, 34.0, Ink::Pink)
+                });
             }
         });
         self.bubble.set(ctx.riso, &d);
         let p = customer::profile(v.species);
-        self.bubble_text.set_text(&format!("{}: “{}”", p.name, v.hello));
+        self.bubble_name.set_text(p.name);
+        self.bubble_text.set_text(&format!("“{}”", v.hello));
+        self.bubble_tag.set_visible(pre);
         self.bubble.set_visible(true);
         self.bubble.set_scale(0.3);
-        let _ = pre;
+        self.set_hint_visible(true);
     }
 
     fn next_visitor(&mut self, ctx: &mut Ctx) {
@@ -240,6 +335,7 @@ impl Shop {
             self.state = Visitor::Entering(0.0);
             self.draw_critter(ctx);
             self.bubble.set_visible(false);
+            self.set_hint_visible(false);
             ctx.sfx(Sfx::Chirp);
             let sold_out = ctx.state.shelf.is_empty();
             if let Some(b) = self.btns.get(Btn::Sorry) {
@@ -260,6 +356,10 @@ impl Shop {
         }
     }
 
+    fn head(&self) -> V2 {
+        self.stand + HEAD_C * CRITTER_SCALE
+    }
+
     fn on_served(&mut self, ctx: &mut Ctx, r: &ServeResult) {
         self.critter_expr = match r.reaction {
             Reaction::Love => Expr::Excited,
@@ -269,17 +369,18 @@ impl Shop {
         self.state = Visitor::Reacting(0.0, r.reaction);
         self.draw_critter(ctx);
         self.bubble.set_visible(false);
+        self.set_hint_visible(false);
         let mut rn = self.rn.clone();
-        let head = self.stand + v2(0.0, -250.0);
+        let head = self.head();
         let (word, s) = match r.reaction {
             Reaction::Love => ("Loved it!", Sfx::Sparkle),
             Reaction::Happy => ("Yum, thanks!", Sfx::Chirp),
             _ => ("Thank you!", Sfx::Plop),
         };
-        self.floaters.push(Floater::new(ctx.riso, &mut rn, word, head + v2(0.0, -120.0), 38.0, Ink::Key));
+        self.floaters.push(Floater::new(ctx.riso, &mut rn, word, head + v2(0.0, -170.0), 38.0, Ink::Key));
         let coins = r.coins + r.tip;
         let mut f =
-            Floater::new(ctx.riso, &mut rn, &format!("+{coins}"), head + v2(150.0, -40.0), 36.0, Ink::Pink);
+            Floater::new(ctx.riso, &mut rn, &format!("+{coins}"), head + v2(170.0, -60.0), 36.0, Ink::Pink);
         f.life = 1.6;
         self.floaters.push(f);
         ctx.sfx(Sfx::Coin);
@@ -303,48 +404,110 @@ impl Shop {
 
     fn show_summary(&mut self, ctx: &mut Ctx) {
         self.state = Visitor::Summary;
+        self.receipt_shot = false;
         self.bubble.set_visible(false);
         self.critter.set_visible(false);
         if let Some(b) = self.btns.get(Btn::Sorry) {
             b.set_visible(false);
         }
-        if let Some(b) = self.btns.get(Btn::Hint) {
-            b.set_visible(false);
-        }
+        self.set_hint_visible(false);
         let s = ctx.state.today.clone();
         let mut rn = self.rn.clone();
-        let y = 470.0;
-        let card = list(|d| {
-            props::ticket(d, 520.0, 520.0, Ink::Pink);
-            props::coin(d, v2(-170.0, -80.0), 26.0);
-            props::heart_icon(d, v2(-170.0, 10.0), 46.0);
-            icon(d, Icon::Shop, v2(-170.0, 100.0), 32.0);
-        });
-        self.summary.push(ctx.riso.art(&mut rn, v2(360.0, y), &card));
-        let lines = [
-            ("Today's receipt".to_string(), -210.0, 30.0),
-            (format!("{} coins  (+{} tips)", s.coins + s.tips, s.tips), -80.0, 28.0),
-            (format!("{} hearts", s.hearts), 10.0, 28.0),
-            (format!("{} served · {} loved it", s.served, s.loved), 100.0, 26.0),
+        let (w, h) = (452.0, 560.0);
+        // The receipt and its button form one block, centred above the counter.
+        let y0 = self.top + ui::MAST_H + 30.0;
+        let block = h + 18.0 + ui::PILL_H;
+        let cy = y0 + ((self.counter_y - 24.0 - y0) - block).max(0.0) * 0.5 + h * 0.5;
+        let x0 = 360.0 - w * 0.5;
+        let top = cy - h * 0.5;
+        let rows: [(Icon, String, String); 5] = [
+            (Icon::Coin, "Sales".into(), format!("{}", s.coins)),
+            (Icon::Star, "Tips".into(), format!("{}", s.tips)),
+            (Icon::Heart, "Hearts".into(), format!("{}", s.hearts)),
+            (Icon::Shop, "Served".into(), format!("{}", s.served)),
+            (Icon::Check, "Loved it".into(), format!("{}", s.loved)),
         ];
-        for (i, (t, dy, size)) in lines.iter().enumerate() {
-            let spec = if i == 0 {
-                TextSpec::new(t.clone(), rect(110.0, y + dy - 26.0, 500.0, 52.0), *size).bold()
-            } else {
-                TextSpec::new(t.clone(), rect(240.0, y + dy - 26.0, 360.0, 52.0), *size).left()
-            };
-            self.summary_labels.push(ctx.riso.text(&mut rn, &spec));
+        let row_y = |i: usize| top + 150.0 + i as f32 * 58.0;
+        let card = list(|d| {
+            props::receipt(d, w, h);
+            // Letterhead: the shop's name between two wheat sprigs.
+            for sx in [-1.0f32, 1.0] {
+                let c = v2(sx * 96.0, -h * 0.5 + 46.0);
+                d.line(Ink::Key, 2.0, &[c + v2(0.0, 9.0), c + v2(0.0, -9.0)]);
+                for k in 0..3 {
+                    for side in [-1.0f32, 1.0] {
+                        let e = proof_core::geom::ellipse(
+                            c + v2(side * 3.4, 4.0 - k as f32 * 5.0),
+                            2.2,
+                            3.8,
+                            side * 0.5,
+                        );
+                        d.fill(Ink::Key, 1.0, &e);
+                    }
+                }
+            }
+            for (i, (ic, _, _)) in rows.iter().enumerate() {
+                let y = row_y(i) - cy;
+                icon(d, *ic, v2(-w * 0.5 + 52.0, y), 17.0);
+                props::dashed(
+                    d,
+                    v2(-w * 0.5 + 170.0, y + 8.0),
+                    v2(w * 0.5 - 90.0, y + 8.0),
+                    2.0,
+                    6.0,
+                    2.0,
+                    0.45,
+                );
+            }
+            let ty = row_y(rows.len()) - cy + 4.0;
+            props::dashed(
+                d,
+                v2(-w * 0.5 + 24.0, ty - 14.0),
+                v2(w * 0.5 - 24.0, ty - 14.0),
+                8.0,
+                6.0,
+                2.0,
+                0.7,
+            );
+            props::dashed(d, v2(-w * 0.5 + 24.0, ty - 8.0), v2(w * 0.5 - 24.0, ty - 8.0), 8.0, 6.0, 2.0, 0.7);
+        });
+        self.summary.push(ctx.riso.art(&mut rn, v2(360.0, cy), &card));
+        let mut label = |sp: TextSpec| self.summary_labels.push(ctx.riso.text(&mut rn, &sp));
+        label(TextSpec::new("PROOF BAKERY", rect(x0, top + 30.0, w, 32.0), 18.0).plain());
+        label(TextSpec::new("Today's receipt", rect(x0, top + 70.0, w, 46.0), 30.0).bold());
+        for (i, (_, name, val)) in rows.iter().enumerate() {
+            let y = row_y(i);
+            label(TextSpec::new(name.clone(), rect(x0 + 84.0, y - 20.0, 170.0, 40.0), 25.0).left().plain());
+            label(
+                TextSpec::new(val.clone(), rect(x0 + w - 150.0, y - 22.0, 110.0, 44.0), 28.0).bold().right(),
+            );
         }
-        let h = ctx.lay.h;
-        let close =
-            Button::pill(ctx, &mut rn, rect(190.0, h - 110.0, 340.0, 86.0), "Close up shop", Ink::Pink);
+        let ty = row_y(rows.len()) + 4.0;
+        label(TextSpec::new("Total", rect(x0 + 40.0, ty - 4.0, 200.0, 44.0), 28.0).bold().left());
+        label(
+            TextSpec::new(
+                format!("{} ◉", s.coins + s.tips),
+                rect(x0 + w - 200.0, ty - 4.0, 160.0, 44.0),
+                30.0,
+            )
+            .bold()
+            .right(),
+        );
+        let close_y = cy + h * 0.5 + 18.0 + ui::PILL_H * 0.5;
+        let close = Button::pill(
+            ctx,
+            &mut rn,
+            rect(360.0 - 180.0, close_y - ui::PILL_H * 0.5, 360.0, ui::PILL_H),
+            "Close up shop",
+            Ink::Pink,
+        );
         self.btns.add(Btn::Close, close);
         ctx.sfx(Sfx::Ding);
         ctx.kick(0.6);
     }
 
     fn cell_at(&self, p: V2) -> Option<usize> {
-        self.cells.iter().position(|c| c.art.pos().dist(p) < 75.0)
+        self.cells.iter().position(|c| c.art.pos().dist(p) < 72.0)
     }
 
     fn over_critter(&self, p: V2) -> bool {
@@ -507,6 +670,7 @@ impl Screen for Shop {
                     self.critter_expr = Expr::Hungry;
                     self.draw_critter(ctx);
                     self.bubble.set_visible(false);
+                    self.set_hint_visible(false);
                     self.state = Visitor::Leaving(0.0);
                 }
                 Event::Gift { from, unlock, coins } => {
@@ -556,8 +720,13 @@ impl Screen for Shop {
                 Some(format!("serve_{:?}", v.species).to_lowercase())
             }
             Visitor::Summary => {
+                if !self.receipt_shot {
+                    // Photograph the receipt before closing up.
+                    self.receipt_shot = true;
+                    return Some("receipt".into());
+                }
                 ctx.act(Action::CloseShop);
-                Some("receipt".into())
+                None
             }
             _ => None,
         }

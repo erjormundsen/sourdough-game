@@ -1,26 +1,31 @@
 //! Evening prep: feed the starters, read tomorrow's board, mix doughs into the fridge.
+//!
+//! Composition: the pantry wall with the moonlit window (left) and the cork "Tomorrow"
+//! board (right); the starter jars stand on the lamp-lit shelf with paper status tags
+//! hanging from its edge; the prep counter below holds the fridge's bannetons on a couche
+//! (and the flour sacks while feeding); the action bar sits on the cabinet doors.
 
 use super::{Ctx, Nav, Ptr, Screen, new_root};
 use crate::riso::{Art, TextSpec, list, list_at};
 use crate::sfx::Sfx;
-use crate::ui::{Button, Floater, Hud, Panel};
+use crate::ui::{self, Button, Floater, Hud, Panel};
 use godot::classes::{Label, Node, Node2D};
 use godot::prelude::*;
 use proof_core::anim::Spring;
-use proof_core::art::critters::{CritterView, critter};
+use proof_core::art::critters::{CritterView, HEAD_C, critter};
 use proof_core::art::icons::{Icon, icon};
 use proof_core::art::jar::{TAPE_CENTER, jar};
-use proof_core::art::scenes::{Backdrop, backdrop, counter_front, counter_top};
+use proof_core::art::scenes::{
+    Backdrop, Dressing, backdrop_dressed, counter_front, counter_top, jar_scale, jar_shelf, jar_slots,
+};
 use proof_core::art::{Expr, props};
-use proof_core::content::{Flour, Recipe, Shape};
+use proof_core::content::{Flour, Recipe, Shape, Species};
 use proof_core::customer::Want;
-use proof_core::draw::DrawList;
-use proof_core::geom::{V2, Xf, arc, blob, rect, rounded_rect, v2};
+use proof_core::draw::{DrawList, Paint};
+use proof_core::geom::{V2, Xf, arc, blob, circle, rect, v2};
 use proof_core::gesture::{FOLD_ORDER, compass_vec, fold_quality};
 use proof_core::ink::Ink;
-use proof_core::state::{Action, Event};
-
-const JAR_SCALE: f32 = 0.8;
+use proof_core::state::{Action, Event, Visit};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Btn {
@@ -55,6 +60,7 @@ enum Mode {
 struct JarSlot {
     art: Art,
     name: Gd<Label>,
+    tag: Art,
     status: Gd<Label>,
     home: V2,
     bounce: Spring,
@@ -86,61 +92,81 @@ pub struct Evening {
     starter: usize,
     shape: Shape,
     swipe_start: Option<V2>,
-    prompt: Gd<Label>,
     floaters: Vec<Floater>,
-    counter_y: f32,
+    /// Where objects stand on the prep counter.
+    surface: f32,
+    shelf_y: f32,
+    bar: f32,
     t: f32,
 }
 
-fn jar_centers(n: usize) -> Vec<f32> {
-    match n {
-        0 | 1 => vec![200.0],
-        2 => vec![140.0, 360.0],
-        _ => vec![130.0, 360.0, 590.0],
-    }
+/// Jar centre used for the stir gesture.
+const STIR_UP: f32 = 95.0;
+const STIR_R: f32 = 150.0;
+
+/// A round portrait of a regular for the board (head centred in a circle of radius `r`).
+fn portrait(d: &mut DrawList, species: Species, c: V2, r: f32) {
+    // TODO(B): switch to `critters::critter_head(d, species, Expr::Content)` once it lands.
+    let frame = circle(c, r);
+    d.backing(&frame);
+    d.fill(Ink::Blue, 0.2, &frame);
+    let k = r / 92.0;
+    d.clipped(&frame, |d| {
+        d.with(Xf::at(c - HEAD_C * k + v2(0.0, r * 0.18)).scaled(k), |d| {
+            critter(d, &CritterView { species, expr: Expr::Content, t: 0.0 })
+        });
+    });
+    d.outline(Ink::Key, 2.6, &frame);
 }
 
 impl Evening {
     pub fn new(ctx: &mut Ctx, host: &mut Gd<Node2D>) -> Evening {
         let root = new_root(host);
         let mut rn: Gd<Node> = root.clone().upcast();
-        let h = ctx.lay.h;
-        let bg = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| backdrop(d, Backdrop::Pantry, h)));
-        let counter_y = counter_top(Backdrop::Pantry, h);
+        let top = ctx.lay.top;
+        let hh = ctx.lay.h - top - ctx.lay.bottom;
+        let slots = jar_slots(Backdrop::Pantry, ctx.state.starters.len());
+        let dress = Dressing { jars: slots.clone() };
+        let bg =
+            ctx.riso.art(&mut rn, v2(0.0, top), &list(|d| backdrop_dressed(d, Backdrop::Pantry, hh, &dress)));
+        let shelf_y = top + jar_shelf(Backdrop::Pantry, hh);
+        let counter_y = top + counter_top(Backdrop::Pantry, hh);
+        let surface = counter_y + 52.0;
         let board = ctx.riso.art(&mut rn, V2::ZERO, &DrawList::new());
+        let scale = jar_scale(Backdrop::Pantry);
         let mut jars = Vec::new();
-        let xs = jar_centers(ctx.state.starters.len());
         for (i, s) in ctx.state.starters.iter().enumerate() {
-            let home = v2(xs.get(i).copied().unwrap_or(360.0), 700.0);
-            let art = ctx.riso.art(
-                &mut rn,
-                home,
-                &list_at(Xf::IDENTITY.scaled(JAR_SCALE), |d| jar(d, &s.view(0.0))),
-            );
+            let home = v2(slots.get(i).copied().unwrap_or(360.0), shelf_y - 4.0);
+            let art =
+                ctx.riso.art(&mut rn, home, &list_at(Xf::IDENTITY.scaled(scale), |d| jar(d, &s.view(0.0))));
             let mut an = art.as_node();
-            let tc = TAPE_CENTER * JAR_SCALE;
+            let tc = TAPE_CENTER * scale;
             let name = ctx.riso.text(
                 &mut an,
                 &TextSpec::new(s.name.clone(), rect(tc.x - 60.0, tc.y - 16.0, 120.0, 32.0), 21.0)
                     .bold()
                     .plain(),
             );
-            let status = ctx
-                .riso
-                .text(&mut rn, &TextSpec::new("", rect(home.x - 110.0, 728.0, 220.0, 60.0), 20.0).wrap());
-            jars.push(JarSlot { art, name, status, home, bounce: Spring::new(1.0) });
+            let tag_at = v2(home.x, shelf_y + 15.0);
+            let tag =
+                ctx.riso.art(&mut rn, tag_at, &list(|d| props::hanging_tag(d, 204.0, 44.0, 10.0, Ink::Pink)));
+            let status = ctx.riso.text(
+                &mut rn,
+                &TextSpec::new("", rect(tag_at.x - 102.0, tag_at.y + 14.0, 204.0, 40.0), 18.0).bold().plain(),
+            );
+            jars.push(JarSlot { art, name, tag, status, home, bounce: Spring::new(1.0) });
         }
         let ring = ctx.riso.art(&mut rn, V2::ZERO, &DrawList::new());
-        let front = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| counter_front(d, Backdrop::Pantry, h)));
-        let fridge = ctx.riso.art(&mut rn, v2(360.0, counter_y + 72.0), &DrawList::new());
+        let front = ctx.riso.art(&mut rn, v2(0.0, top), &list(|d| counter_front(d, Backdrop::Pantry, hh)));
+        let fridge = ctx.riso.art(&mut rn, v2(360.0, counter_y + 38.0), &DrawList::new());
         let fridge_label = ctx.riso.text(
             &mut rn,
-            &TextSpec::new("", rect(210.0, counter_y + 84.0, 300.0, 36.0), 22.0).bold().plain(),
+            &TextSpec::new("", rect(360.0 - 90.0, counter_y + 77.0, 180.0, 26.0), 18.0).bold().plain(),
         );
         let dough = ctx.riso.art(&mut rn, v2(360.0, 820.0), &DrawList::new());
         let arrow = ctx.riso.art(&mut rn, v2(360.0, 820.0), &DrawList::new());
-        let prompt = ctx.riso.text(&mut rn, &TextSpec::new("", rect(30.0, 800.0, 660.0, 50.0), 28.0).bold());
         let hud = Hud::new(ctx, &mut rn, "Dusk edition · prep");
+        let bar = ui::bar_y(ctx);
         let mut e = Evening {
             root,
             rn,
@@ -166,18 +192,20 @@ impl Evening {
             starter: 0,
             shape: Shape::Boule,
             swipe_start: None,
-            prompt,
             floaters: Vec::new(),
-            counter_y,
+            surface,
+            shelf_y,
+            bar,
             t: 0.0,
         };
         e.build_board(ctx);
         e.refresh_jars(ctx);
         e.refresh_fridge(ctx);
         let mut rn2 = e.rn.clone();
-        let mix = Button::pill(ctx, &mut rn2, rect(40.0, h - 104.0, 300.0, 82.0), "Mix dough", Ink::Yellow);
+        let (sec, pri) = ui::bar_rects(bar, true);
+        let mix = Button::pill(ctx, &mut rn2, sec, "Mix dough", Ink::Yellow);
         e.btns.add(Btn::Mix, mix);
-        let night = Button::pill(ctx, &mut rn2, rect(380.0, h - 104.0, 300.0, 82.0), "Night page", Ink::Pink);
+        let night = Button::pill(ctx, &mut rn2, pri, "Night page", Ink::Pink);
         e.btns.add(Btn::Night, night);
         e.set_idle_prompt(ctx);
         ctx.note(
@@ -187,7 +215,11 @@ impl Evening {
         e
     }
 
-    fn set_idle_prompt(&mut self, ctx: &Ctx) {
+    fn say(&mut self, ctx: &mut Ctx, t: &str) {
+        self.hud.say(ctx.riso, t);
+    }
+
+    fn set_idle_prompt(&mut self, ctx: &mut Ctx) {
         let hungry = ctx.state.starters.iter().any(|s| !s.fed_today);
         let t = if hungry {
             "Tap a jar to feed it"
@@ -196,56 +228,81 @@ impl Evening {
         } else {
             "All set! Read the night page"
         };
-        self.prompt.set_text(t);
+        self.say(ctx, t);
+    }
+
+    /// The cork board's rectangle (upper right, above the jars).
+    /// The cork board: sized to tomorrow's cards and centred in the wall space between the
+    /// headline ribbon and the jars' cloth caps.
+    fn board_rect(&self, ctx: &Ctx) -> proof_core::geom::Rect {
+        let y0 = ctx.lay.top + ui::RIBBON_Y + 34.0;
+        let y1 = self.shelf_y - 200.0 * jar_scale(Backdrop::Pantry) / 0.8 - 20.0;
+        let rows = ctx.state.tomorrow.len().clamp(1, 6).div_ceil(2) as f32;
+        let card = if rows <= 2.0 { 118.0 } else { 100.0 };
+        let want = 50.0 + 44.0 + rows * (card + 12.0) + 12.0;
+        let h = want.min(y1 - y0).max(300.0);
+        rect(332.0, y0 + ((y1 - y0) - h).max(0.0) * 0.4, 368.0, h)
     }
 
     fn build_board(&mut self, ctx: &mut Ctx) {
         for mut l in self.board_labels.drain(..) {
             l.queue_free();
         }
-        let visitors = ctx.state.tomorrow.clone();
+        let visitors: Vec<Visit> = ctx.state.tomorrow.clone();
+        let r = self.board_rect(ctx);
+        let c = r.center();
+        let n = visitors.len().min(6);
+        let rows = n.div_ceil(2).max(1);
+        let title_h = 50.0;
+        let avail = r.h - title_h - 44.0;
+        let (cw, ch) = (156.0, (avail / rows as f32 - 12.0).min(if rows <= 2 { 118.0 } else { 100.0 }));
+        let grid_top = r.y + title_h + 26.0 + (avail - rows as f32 * (ch + 12.0)).max(0.0) * 0.5;
+        let card_c = |i: usize| -> V2 {
+            let col = i % 2;
+            let row = i / 2;
+            let last_single = n % 2 == 1 && i == n - 1;
+            let x = if last_single { c.x } else { c.x + (col as f32 - 0.5) * (cw + 16.0) };
+            v2(x, grid_top + row as f32 * (ch + 12.0) + ch * 0.5)
+        };
         let d = list(|d| {
-            let r = rect(372.0, 108.0, 330.0, 372.0);
-            let board = rounded_rect(r, 18.0);
-            d.backing(&board);
-            d.fill(Ink::Yellow, 0.55, &board);
-            d.ht(Ink::Pink, 0.28, &board);
-            d.outline(Ink::Key, 5.0, &board);
+            d.with(Xf::at(c), |d| props::cork_board(d, r.w, r.h));
+            // Title slip pinned at the top.
+            d.with(Xf::at(v2(c.x, r.y + 30.0)).rotated(-0.02), |d| {
+                props::pinned_card(d, 190.0, 40.0, None, 2)
+            });
             for (i, v) in visitors.iter().enumerate().take(6) {
-                let cx = r.x + 84.0 + (i % 2) as f32 * 164.0;
-                let cy = r.y + 118.0 + (i / 2) as f32 * 112.0;
-                let card = rounded_rect(rect(cx - 76.0, cy - 50.0, 152.0, 100.0), 12.0);
-                d.backing(&card);
-                if v.preorder {
-                    d.fill(Ink::Pink, 0.18, &card);
-                }
-                d.outline(Ink::Key, 2.5, &card);
-                d.clipped(&card, |d| {
-                    d.with(Xf::at(v2(cx - 36.0, cy + 70.0)).scaled(0.36), |d| {
-                        critter(d, &CritterView { species: v.species, expr: Expr::Content, t: 0.0 })
-                    });
+                let p = card_c(i);
+                let rot = (i as f32 * 1.7).sin() * 0.03;
+                d.with(Xf::at(p).rotated(rot), |d| {
+                    props::pinned_card(d, cw, ch, if v.preorder { Some(Ink::Pink) } else { None }, i as u32);
+                    let pr = (ch * 0.34).min(38.0);
+                    portrait(d, v.species, v2(-cw * 0.5 + pr + 12.0, 7.0), pr);
+                    let nw = v.order.wants.len().min(2);
+                    let is = (ch * 0.22).clamp(19.0, 25.0);
+                    for (k, w) in v.order.wants.iter().enumerate().take(2) {
+                        let x = if nw == 1 { cw * 0.22 } else { cw * 0.06 + k as f32 * 46.0 };
+                        icon(d, Icon::Want(*w), v2(x, 8.0), is);
+                    }
+                    if v.preorder {
+                        d.with(Xf::at(v2(cw * 0.5 - 16.0, -ch * 0.5 + 4.0)).rotated(0.6), |d| {
+                            props::tape(d, 58.0, 16.0, Ink::Pink)
+                        });
+                    }
                 });
-                for (k, w) in v.order.wants.iter().enumerate().take(2) {
-                    icon(d, Icon::Want(*w), v2(cx + 30.0 + k as f32 * 8.0, cy - 8.0 + k as f32 * 30.0), 24.0);
-                }
-                if v.preorder {
-                    d.with(Xf::at(v2(cx + 36.0, cy - 50.0)).rotated(0.2), |d| {
-                        d.fill(Ink::Pink, 1.0, &proof_core::geom::circle(V2::ZERO, 8.0));
-                        d.outline(Ink::Key, 2.5, &proof_core::geom::circle(V2::ZERO, 8.0));
-                    });
-                }
             }
         });
         self.board.set(ctx.riso, &d);
         let mut rn = self.rn.clone();
-        self.board_labels.push(
-            ctx.riso.text(&mut rn, &TextSpec::new("Tomorrow", rect(372.0, 116.0, 330.0, 44.0), 30.0).bold()),
-        );
+        self.board_labels.push(ctx.riso.text(
+            &mut rn,
+            &TextSpec::new("Tomorrow", rect(c.x - 95.0, r.y + 10.0, 190.0, 44.0), 25.0).bold(),
+        ));
         if visitors.is_empty() {
             self.board_labels.push(
                 ctx.riso.text(
                     &mut rn,
-                    &TextSpec::new("A quiet day ahead", rect(372.0, 250.0, 330.0, 60.0), 24.0),
+                    &TextSpec::new("A quiet day ahead", rect(r.x + 20.0, c.y - 20.0, r.w - 40.0, 60.0), 24.0)
+                        .plain(),
                 ),
             );
         }
@@ -253,10 +310,11 @@ impl Evening {
 
     fn refresh_jars(&mut self, ctx: &mut Ctx) {
         let t = (self.t * 3.0).floor() / 3.0;
+        let scale = jar_scale(Backdrop::Pantry);
         for (i, slot) in self.jars.iter_mut().enumerate() {
             let Some(s) = ctx.state.starters.get(i) else { continue };
             let view = s.view(t);
-            slot.art.set(ctx.riso, &list_at(Xf::IDENTITY.scaled(JAR_SCALE), |d| jar(d, &view)));
+            slot.art.set(ctx.riso, &list_at(Xf::IDENTITY.scaled(scale), |d| jar(d, &view)));
             slot.name.set_text(&s.name);
             let st = if s.fed_today {
                 format!("Fed ✓ · {}", s.tang_word())
@@ -271,12 +329,25 @@ impl Evening {
         let (n, slots) = (ctx.state.fridge.len() as u32, ctx.state.fridge_slots);
         let shapes: Vec<Shape> = ctx.state.fridge.iter().map(|d| d.shape).collect();
         let d = list(|d| {
-            let w = slots as f32 * 64.0;
+            let pitch = 70.0;
+            let w = slots as f32 * pitch + 30.0;
+            props::couche(d, w, 58.0);
             for i in 0..slots {
-                let x = -w * 0.5 + 32.0 + i as f32 * 64.0;
+                let x = -w * 0.5 + 15.0 + pitch * 0.5 + i as f32 * pitch;
                 let shape = shapes.get(i as usize).copied().unwrap_or(Shape::Boule);
-                d.with(Xf::at(v2(x, -20.0)), |d| props::banneton(d, shape, 26.0, i < n));
+                if i < n {
+                    d.with(Xf::at(v2(x, -2.0)), |d| props::banneton(d, shape, 25.0, true));
+                } else {
+                    // An empty spot: a dashed ring waiting for a banneton.
+                    for k in 0..12 {
+                        let a0 = k as f32 / 12.0 * std::f32::consts::TAU;
+                        let seg = arc(v2(x, -2.0), 24.0, a0, a0 + 0.3);
+                        d.stroke_p(Paint::solid(Ink::Key, 0.5), 2.0, &seg, false);
+                    }
+                }
             }
+            // A masking-tape label on the counter's edge.
+            d.with(Xf::at(v2(0.0, 52.0)).rotated(-0.015), |d| props::tape(d, 180.0, 28.0, Ink::Yellow));
         });
         self.fridge.set(ctx.riso, &d);
         self.fridge_label.set_text(&format!("Fridge {n}/{slots}"));
@@ -287,6 +358,14 @@ impl Evening {
             let c = j.home + v2(0.0, -100.0);
             (p.x - c.x).abs() < 75.0 && (p.y - c.y).abs() < 110.0
         })
+    }
+
+    fn set_idle_widgets(&mut self, visible: bool) {
+        for (_, b) in &mut self.btns.items {
+            b.set_visible(visible);
+        }
+        self.fridge.set_visible(visible);
+        self.fridge_label.set_visible(visible);
     }
 
     // --- feeding -----------------------------------------------------------------------------
@@ -303,20 +382,16 @@ impl Evening {
         let n = flours.len() as f32;
         let mut rn = self.rn.clone();
         for (i, f) in flours.iter().enumerate() {
-            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 200.0;
-            let b = Button::bare(ctx, &mut rn, v2(x, self.counter_y + 20.0), 150.0, Icon::Flour(*f));
+            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 196.0;
+            let b = Button::sack(ctx, &mut rn, v2(x, self.surface + 6.0), *f);
             self.feed_btns.add(Btn::Flour(*f), b);
         }
-        let h = ctx.lay.h;
-        let cancel = Button::pill(ctx, &mut rn, rect(260.0, h - 100.0, 200.0, 70.0), "Back", Ink::Blue);
+        let (_, pri) = ui::bar_rects(self.bar, false);
+        let cancel = Button::pill(ctx, &mut rn, pri, "Back", Ink::Blue);
         self.feed_btns.add(Btn::CancelFeed, cancel);
-        for (_, b) in &mut self.btns.items {
-            b.set_visible(false);
-        }
-        self.fridge.set_visible(false);
-        self.fridge_label.set_visible(false);
+        self.set_idle_widgets(false);
         let name = ctx.state.starters[jar].name.clone();
-        self.prompt.set_text(&format!("What's for dinner, {name}?"));
+        self.say(ctx, &format!("What's for dinner, {name}?"));
         ctx.sfx(Sfx::Bubble);
         ctx.note("feed", "White flour feeds the pink Yeasties (mild). Rye feeds the blue Lactos (tangy). Whole wheat is a bit of both!");
     }
@@ -325,27 +400,39 @@ impl Evening {
         let Mode::PickFlour(jar) = self.mode else { return };
         self.feed_btns.clear();
         self.mode = Mode::Stir { jar, flour, turns: 0.0, last: None };
-        self.prompt.set_text("Stir! Draw circles around the jar");
+        self.say(ctx, "Stir! Draw circles around the jar");
         ctx.sfx(Sfx::Pour);
         self.draw_ring(ctx, jar, 0.0);
     }
 
     fn draw_ring(&mut self, ctx: &mut Ctx, jar: usize, progress: f32) {
-        let c = self.jars[jar].home + v2(0.0, -95.0);
+        let c = self.jars[jar].home + v2(0.0, -STIR_UP);
         let d = list(|d| {
-            let r = 150.0;
-            d.stroke_p(
-                proof_core::draw::Paint::ht(Ink::Blue, 0.5),
-                14.0,
-                &arc(c, r, 0.0, std::f32::consts::TAU),
-                true,
-            );
-            if progress > 0.01 {
-                let a0 = -std::f32::consts::FRAC_PI_2;
-                d.line(Ink::Pink, 14.0, &arc(c, r, a0, a0 + std::f32::consts::TAU * progress.min(1.0)));
+            let r = STIR_R;
+            // Dashed track.
+            let n = 28;
+            for k in 0..n {
+                let a0 = k as f32 / n as f32 * std::f32::consts::TAU;
+                d.stroke_p(Paint::solid(Ink::Blue, 0.75), 9.0, &arc(c, r, a0, a0 + 0.12), false);
             }
-            let tip = c + V2::from_angle(-0.4) * 150.0;
-            d.fill(Ink::Key, 1.0, &[tip + v2(-14.0, -10.0), tip + v2(16.0, -4.0), tip + v2(-2.0, 18.0)]);
+            let a0 = -std::f32::consts::FRAC_PI_2;
+            if progress > 0.01 {
+                let a1 = a0 + std::f32::consts::TAU * progress.min(1.0);
+                d.line(Ink::Key, 18.0, &arc(c, r, a0, a1));
+                d.line(Ink::Pink, 12.0, &arc(c, r, a0, a1));
+            }
+            // A wooden spoon riding the ring at the progress tip, pointing the way.
+            let a = a0 + std::f32::consts::TAU * progress.min(1.0) + 0.25;
+            let tip = c + V2::from_angle(a) * r;
+            let dir = V2::from_angle(a + std::f32::consts::FRAC_PI_2);
+            let head = vec![
+                tip + dir * 20.0,
+                tip - dir * 8.0 + dir.perp() * 16.0,
+                tip - dir * 8.0 - dir.perp() * 16.0,
+            ];
+            d.backing(&head);
+            d.fill(Ink::Pink, 1.0, &head);
+            d.outline(Ink::Key, 3.5, &head);
         });
         self.ring.set(ctx.riso, &d);
         self.ring.set_visible(true);
@@ -362,15 +449,20 @@ impl Evening {
         self.mode = Mode::Idle;
         self.feed_btns.clear();
         self.ring.set_visible(false);
-        for (_, b) in &mut self.btns.items {
-            b.set_visible(true);
-        }
-        self.fridge.set_visible(true);
-        self.fridge_label.set_visible(true);
+        self.set_idle_widgets(true);
         self.set_idle_prompt(ctx);
     }
 
     // --- dough station -----------------------------------------------------------------------
+
+    /// The dough-station card: under the ribbon, above the bar; on tall phones it keeps its
+    /// proportions and sits centred with the pantry showing around it.
+    fn station_rect(&self, ctx: &Ctx) -> proof_core::geom::Rect {
+        let y0 = ctx.lay.top + ui::RIBBON_Y + 32.0;
+        let y1 = self.bar - ui::PILL_H * 0.5 - 18.0;
+        let h = (y1 - y0).min(1040.0);
+        rect(22.0, y0 + ((y1 - y0) - h) * 0.5, 676.0, h)
+    }
 
     fn open_station(&mut self, ctx: &mut Ctx) {
         if ctx.state.fridge_free() == 0 {
@@ -378,15 +470,13 @@ impl Evening {
             return;
         }
         self.close_station();
-        for (_, b) in &mut self.btns.items {
-            b.set_visible(false);
-        }
-        self.fridge.set_visible(false);
-        self.fridge_label.set_visible(false);
+        self.set_idle_widgets(false);
         let mut rn = self.rn.clone();
-        let h = ctx.lay.h;
-        let card = list(|d| props::ticket(d, 680.0, h - 150.0, Ink::Yellow));
-        let mut card_art = ctx.riso.art(&mut rn, v2(360.0, 90.0 + (h - 150.0) * 0.5), &card);
+        let r = self.station_rect(ctx);
+        let card = list(|d| {
+            props::ticket(d, r.w, r.h, Ink::Yellow);
+        });
+        let mut card_art = ctx.riso.art(&mut rn, r.center(), &card);
         card_art.node.set_z_index(5);
         self.station.push(card_art);
         fn add_label(e: &mut Evening, ctx: &mut Ctx, rn: &mut Gd<Node>, spec: TextSpec) {
@@ -398,7 +488,18 @@ impl Evening {
             self,
             ctx,
             &mut rn,
-            TextSpec::new("Mix a batch (makes 2)", rect(40.0, 120.0, 640.0, 50.0), 30.0).bold(),
+            TextSpec::new("Mix a batch", rect(r.x + 60.0, r.y + 40.0, r.w - 120.0, 46.0), 32.0).bold(),
+        );
+        add_label(
+            self,
+            ctx,
+            &mut rn,
+            TextSpec::new(
+                "makes two doughs for tomorrow",
+                rect(r.x + 60.0, r.y + 82.0, r.w - 120.0, 30.0),
+                19.0,
+            )
+            .plain(),
         );
         // Recipes: default to one somebody asked for.
         let wanted: Vec<Recipe> = ctx
@@ -420,62 +521,81 @@ impl Evening {
             Shape::Boule
         };
         let per_row = 3;
-        for (i, r) in recipes.iter().enumerate() {
-            let x = 150.0 + (i % per_row) as f32 * 210.0;
-            let y = 245.0 + (i / per_row) as f32 * 150.0;
-            let mut b = Button::round(ctx, &mut rn, v2(x, y), 50.0, Ink::Yellow, Icon::Recipe(*r));
-            b_z(&mut b);
-            self.station_btns.add(Btn::Recipe(*r), b);
+        let rows = recipes.len().div_ceil(per_row);
+        let y_rec = r.y + 172.0;
+        for (i, rc) in recipes.iter().enumerate() {
+            let in_row = (recipes.len() - (i / per_row) * per_row).min(per_row) as f32;
+            let x = 360.0 + ((i % per_row) as f32 - (in_row - 1.0) * 0.5) * 200.0;
+            let y = y_rec + (i / per_row) as f32 * 142.0;
+            let mut b = Button::round(ctx, &mut rn, v2(x, y), 46.0, Ink::Yellow, Icon::Recipe(*rc));
+            b.set_z(6);
+            self.station_btns.add(Btn::Recipe(*rc), b);
             add_label(
                 self,
                 ctx,
                 &mut rn,
-                TextSpec::new(r.name(), rect(x - 100.0, y + 50.0, 200.0, 34.0), 20.0).plain(),
+                TextSpec::new(rc.name(), rect(x - 100.0, y + 50.0, 200.0, 30.0), 19.0).bold().plain(),
             );
         }
-        let rows = recipes.len().div_ceil(per_row) as f32;
-        let y2 = 245.0 + rows * 150.0 - 10.0;
+        let y2 = y_rec + (rows as f32 - 1.0) * 142.0 + 124.0;
         add_label(
             self,
             ctx,
             &mut rn,
-            TextSpec::new("Starter", rect(40.0, y2 - 20.0, 130.0, 40.0), 22.0).bold().left(),
+            TextSpec::new("Starter", rect(r.x + 36.0, y2 - 20.0, 140.0, 40.0), 23.0).bold().left(),
         );
         for (i, s) in ctx.state.starters.iter().enumerate() {
             let mut b = Button::pill(
                 ctx,
                 &mut rn,
-                rect(160.0 + i as f32 * 170.0, y2 - 28.0, 160.0, 56.0),
+                rect(r.x + 170.0 + i as f32 * 164.0, y2 - 29.0, 152.0, 58.0),
                 &s.name,
                 Ink::Blue,
             );
-            b_z(&mut b);
+            b.set_z(6);
             self.station_btns.add(Btn::Starter(i), b);
         }
-        let y3 = y2 + 78.0;
+        let y3 = y2 + 84.0;
         add_label(
             self,
             ctx,
             &mut rn,
-            TextSpec::new("Shape", rect(40.0, y3 - 20.0, 130.0, 40.0), 22.0).bold().left(),
+            TextSpec::new("Shape", rect(r.x + 36.0, y3 - 20.0, 140.0, 40.0), 23.0).bold().left(),
         );
         for (i, s) in [Shape::Boule, Shape::Batard].iter().enumerate() {
-            let mut b = Button::round(
+            let x = r.x + 206.0 + i as f32 * 96.0;
+            let mut b = Button::round(ctx, &mut rn, v2(x, y3), 34.0, Ink::Yellow, Icon::Shape(*s));
+            b.set_z(6);
+            self.station_btns.add(Btn::Shape(*s), b);
+            add_label(
+                self,
                 ctx,
                 &mut rn,
-                v2(210.0 + i as f32 * 100.0, y3),
-                34.0,
-                Ink::Yellow,
-                Icon::Shape(*s),
+                TextSpec::new(s.name(), rect(x - 50.0, y3 + 38.0, 100.0, 26.0), 17.0).plain(),
             );
-            b_z(&mut b);
-            self.station_btns.add(Btn::Shape(*s), b);
         }
-        let mut close = Button::round(ctx, &mut rn, v2(640.0, 140.0), 30.0, Ink::Blue, Icon::Back);
-        b_z(&mut close);
+        let mut close =
+            Button::round(ctx, &mut rn, v2(r.x + r.w - 44.0, r.y + 58.0), 30.0, Ink::Blue, Icon::Back);
+        close.set_z(6);
         self.station_btns.add(Btn::CloseMix, close);
-        self.dough.set_pos(v2(360.0, y3 + 190.0));
-        self.arrow.set_pos(v2(360.0, y3 + 190.0));
+        // The bowl sits in the space left under the choices, with room for the fold arrows,
+        // a caption and the fold dots above it.
+        let lo = y3 + 66.0 + 250.0;
+        let hi = r.y + r.h - 12.0 - 250.0;
+        let bowl_c = v2(360.0, if lo <= hi { (lo + hi) * 0.5 } else { hi });
+        add_label(
+            self,
+            ctx,
+            &mut rn,
+            TextSpec::new(
+                "Swipe the way the arrow points",
+                rect(r.x + 40.0, bowl_c.y - 262.0, r.w - 80.0, 32.0),
+                21.0,
+            )
+            .plain(),
+        );
+        self.dough.set_pos(bowl_c);
+        self.arrow.set_pos(bowl_c);
         self.dough.node.set_z_index(6);
         self.arrow.node.set_z_index(7);
         self.dough.set_visible(true);
@@ -519,41 +639,38 @@ impl Evening {
                 )
             })
             .unwrap_or_default();
-        self.prompt.set_text(&st);
+        self.say(ctx, &st);
     }
 
     fn draw_station_dough(&mut self, ctx: &mut Ctx, folds: usize) {
         let shape = self.shape;
         let (rx, ry) = shape.radii();
         let d = list(|d| {
-            let bowl = {
-                let mut b = arc(v2(0.0, 10.0), 190.0, 0.0, std::f32::consts::PI);
-                b.push(v2(-190.0, 10.0));
-                b
-            };
-            let body = blob(v2(0.0, -10.0), 120.0 * rx, 100.0 * ry, 0.06, folds as u32 + 1);
+            let br = 150.0;
+            d.with(Xf::at(v2(0.0, 10.0)), |d| props::bowl_back(d, br));
+            let body = blob(v2(0.0, -8.0), 104.0 * rx, 76.0 * ry, 0.06, folds as u32 + 1);
             d.backing(&body);
             d.fill(Ink::Yellow, 0.3 + 0.05 * folds as f32, &body);
+            props::shade(d, &body, v2(-16.0, -18.0), Ink::Pink, 0.0, 0.1);
             for i in 0..folds {
                 let a = i as f32 * 0.9;
                 d.stroke_p(
-                    proof_core::draw::Paint::solid(Ink::Key, 0.5),
+                    Paint::solid(Ink::Key, 0.5),
                     3.0,
-                    &arc(v2(0.0, -10.0), 40.0 + i as f32 * 18.0, a, a + 1.6),
+                    &arc(v2(0.0, -8.0), 30.0 + i as f32 * 16.0, a, a + 1.6),
                     false,
                 );
             }
             d.outline(Ink::Key, 4.5, &body);
-            d.backing(&bowl);
-            d.fill(Ink::Blue, 0.62, &bowl);
-            d.ht(Ink::Pink, 0.25, &bowl);
-            d.outline(Ink::Key, 5.0, &bowl);
+            d.with(Xf::at(v2(0.0, 10.0)), |d| props::bowl_front(d, br));
             for i in 0..4 {
-                let c = v2(-45.0 + i as f32 * 30.0, 120.0);
-                let dot = proof_core::geom::circle(c, 9.0);
+                let c = v2(-45.0 + i as f32 * 30.0, -218.0);
+                let dot = circle(c, 9.0);
                 d.backing(&dot);
                 if i < folds {
                     d.fill(Ink::Pink, 1.0, &dot);
+                } else {
+                    d.fill(Ink::Yellow, 0.2, &dot);
                 }
                 d.outline(Ink::Key, 2.5, &dot);
             }
@@ -562,11 +679,23 @@ impl Evening {
         let next = FOLD_ORDER.get(folds).map(|i| compass_vec(*i));
         let a = list(|d| {
             if let Some(dir) = next {
-                let base = dir * 150.0;
-                let tip = dir * 215.0;
+                let reach = if dir.y < -0.5 {
+                    118.0
+                } else if dir.y > 0.5 {
+                    172.0
+                } else {
+                    178.0
+                };
+                let base = dir * reach;
+                let tip = dir * (reach + 62.0);
                 let n = dir.perp();
-                d.line(Ink::Pink, 16.0, &[base, tip - dir * 10.0]);
-                let head = vec![tip + dir * 12.0, tip - dir * 26.0 + n * 28.0, tip - dir * 26.0 - n * 28.0];
+                let shaft = proof_core::geom::capsule(base, tip - dir * 16.0, 9.0);
+                d.backing(&shaft);
+                d.fill(Ink::Pink, 1.0, &shaft);
+                d.outline(Ink::Key, 3.5, &shaft);
+                let head = vec![tip + dir * 14.0, tip - dir * 24.0 + n * 28.0, tip - dir * 24.0 - n * 28.0];
+                let head = proof_core::geom::chaikin(&head, 1, true);
+                d.backing(&head);
                 d.fill(Ink::Pink, 1.0, &head);
                 d.outline(Ink::Key, 4.0, &head);
             }
@@ -604,11 +733,7 @@ impl Evening {
         self.station_btns.clear();
         self.dough.set_visible(false);
         self.arrow.set_visible(false);
-        for (_, b) in &mut self.btns.items {
-            b.set_visible(true);
-        }
-        self.fridge.set_visible(true);
-        self.fridge_label.set_visible(true);
+        self.set_idle_widgets(true);
         if matches!(self.mode, Mode::Mixing { .. }) {
             self.mode = Mode::Idle;
         }
@@ -642,10 +767,6 @@ impl Evening {
     }
 }
 
-fn b_z(b: &mut Button) {
-    b.set_z(6);
-}
-
 impl Screen for Evening {
     fn root(&self) -> Gd<Node2D> {
         self.root.clone()
@@ -665,6 +786,8 @@ impl Screen for Evening {
         for j in &mut self.jars {
             let s = j.bounce.step(dt, 260.0, 10.0);
             j.art.set_scale_xy(1.0 / s.sqrt(), s);
+            let sway = (self.t * 1.3 + j.home.x * 0.01).sin() * 0.02;
+            j.tag.node.set_rotation(sway);
         }
         let s = self.dough_squash.step(dt, 240.0, 11.0);
         self.dough.set_scale_xy(s, 1.0 / s.sqrt());
@@ -694,7 +817,7 @@ impl Screen for Evening {
                         }
                     }
                     Mode::Stir { jar, .. } => {
-                        let c = self.jars[jar].home + v2(0.0, -95.0);
+                        let c = self.jars[jar].home + v2(0.0, -STIR_UP);
                         if let Mode::Stir { last, .. } = &mut self.mode {
                             *last = Some((q - c).angle());
                         }
@@ -704,7 +827,7 @@ impl Screen for Evening {
             }
             Ptr::Move(q) => {
                 if let Mode::Stir { jar, turns, last, .. } = &mut self.mode {
-                    let c = self.jars[*jar].home + v2(0.0, -95.0);
+                    let c = self.jars[*jar].home + v2(0.0, -STIR_UP);
                     let a = (q - c).angle();
                     if let Some(l) = *last {
                         let mut d = a - l;
@@ -840,11 +963,11 @@ impl Screen for Evening {
                 None
             }
             Mode::Stir { jar, .. } => {
-                let c = self.jars[jar].home + v2(0.0, -95.0);
-                self.pointer(ctx, Ptr::Down(c + v2(150.0, 0.0)));
+                let c = self.jars[jar].home + v2(0.0, -STIR_UP);
+                self.pointer(ctx, Ptr::Down(c + v2(STIR_R, 0.0)));
                 for i in 1..=36 {
                     let a = i as f32 / 36.0 * std::f32::consts::TAU * 2.05;
-                    self.pointer(ctx, Ptr::Move(c + V2::from_angle(a) * 150.0));
+                    self.pointer(ctx, Ptr::Move(c + V2::from_angle(a) * STIR_R));
                 }
                 Some("stirred".into())
             }

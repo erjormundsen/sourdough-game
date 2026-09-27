@@ -42,6 +42,7 @@ impl Default for JarView {
     }
 }
 
+/// Footprint contract (origin = bottom centre of the jar).
 pub const JAR_W: f32 = 170.0;
 pub const JAR_H: f32 = 250.0;
 

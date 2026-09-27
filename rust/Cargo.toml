@@ -19,6 +19,7 @@ png = "0.18"
 # Rasterising in debug builds is slow; keep our code debuggable but deps fast.
 [profile.dev]
 opt-level = 1
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3

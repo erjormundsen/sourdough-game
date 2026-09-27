@@ -9,6 +9,13 @@ use crate::geom::{
 use crate::ink::Ink;
 use std::f32::consts::PI;
 
+/// Footprint contract (reference units, origin = bottom centre of the shoulders):
+/// the tallest regular (bunny ears) stays within `BUST_H`, shoulders within `BUST_W`.
+pub const BUST_H: f32 = 330.0;
+pub const BUST_W: f32 = 230.0;
+/// Head centre at rest (screens anchor speech bubbles and hearts from here).
+pub const HEAD_C: V2 = v2(0.0, -168.0);
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CritterView {
     pub species: Species,

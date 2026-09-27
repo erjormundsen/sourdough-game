@@ -6,7 +6,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DAYS="${1:-1}"
 OUT="${2:-$ROOT/out/tour}"
 SIZE="${3:-720x1280}"
-GODOT="${GODOT:-$ROOT/.tools/godot}"
+# Find Godot: $GODOT, this checkout's .tools/, or the main checkout's .tools/ (git worktrees).
+find_godot() {
+  if [[ -n "${GODOT:-}" ]]; then echo "$GODOT"; return; fi
+  if [[ -x "$ROOT/.tools/godot" ]]; then echo "$ROOT/.tools/godot"; return; fi
+  local common
+  common="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ -n "$common" && -x "$common/../.tools/godot" ]]; then echo "$(cd "$common/.." && pwd)/.tools/godot"; return; fi
+  echo "Godot not found: run scripts/fetch-godot.sh or set GODOT" >&2; exit 1
+}
+GODOT="$(find_godot)"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 rm -f "$OUT"/*.png

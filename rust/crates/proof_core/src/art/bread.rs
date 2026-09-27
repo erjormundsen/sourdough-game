@@ -90,6 +90,9 @@ pub fn loaf_scale(v: &LoafView) -> f32 {
 }
 
 /// Draw a loaf (or raw dough when `bake` = 0) centred at the origin.
+///
+/// Footprint contract: a boule spans ±`r` (bâtard ±`r`·[`Shape::radii`]), growing by up to
+/// 12% with oven spring; cut points are in loaf-normalised units (see `scoring`).
 pub fn loaf_top(d: &mut DrawList, v: &LoafView) {
     let k = v.r * loaf_scale(v);
     let (rx, ry) = v.shape.radii();

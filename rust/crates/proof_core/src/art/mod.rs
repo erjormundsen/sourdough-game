@@ -11,20 +11,23 @@ pub mod jar;
 pub mod oven;
 pub mod props;
 pub mod scenes;
+pub mod style;
 pub mod treats;
 
 pub use face::{Expr, FaceParts, face, face_parts};
 
 use crate::draw::DrawList;
-use crate::geom::{V2, ellipse, v2};
+use crate::geom::{V2, v2};
 use crate::ink::Ink;
 
-/// Standard key-line weight at 1× art scale.
+pub use style::{DETAIL, INNER, OUTER, contact_shadow};
+
+/// Legacy key-line weight (prefer [`style::OUTER`] / [`style::INNER`] / [`style::DETAIL`]).
 pub const LINE: f32 = 4.5;
 
-/// A soft blue halftone cast shadow under an object.
+/// Legacy grounding shadow (prefer [`style::contact_shadow`]).
 pub fn shadow(d: &mut DrawList, c: V2, rx: f32, ry: f32) {
-    d.ht(Ink::Blue, 0.38, &ellipse(c, rx, ry, 0.0));
+    contact_shadow(d, c, rx, ry);
 }
 
 /// Tiny motion/sparkle marks around a point (4-point twinkle).

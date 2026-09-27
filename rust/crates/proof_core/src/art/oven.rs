@@ -23,6 +23,11 @@ impl Default for OvenView {
     }
 }
 
+/// Footprint contract (origin = bottom centre between the feet).
+pub const OVEN_W: f32 = 330.0;
+/// Body top (chimney and steam rise above this).
+pub const OVEN_H: f32 = 318.0;
+
 /// Oven window rectangle in oven-local coordinates (for placing loaves inside).
 pub const WINDOW: crate::geom::Rect = rect(-104.0, -206.0, 208.0, 118.0);
 

@@ -178,7 +178,7 @@ mod tests {
     }
 
     /// The idle loop is quantised so the shop's texture cache replays it instead of
-    /// rasterising a new frame every third of a second.
+    /// rasterising a new frame every third of a second: 12 ticks, six distinct drawings.
     #[test]
     fn idle_loop_repeats_exactly() {
         for s in Species::ALL {
@@ -188,7 +188,7 @@ mod tests {
             let frames = loop_at(0.0);
             assert_eq!(frames, loop_at(28.0), "{s:?} idle loop drifts");
             let distinct = frames.iter().collect::<std::collections::HashSet<_>>().len();
-            assert!((6..=kit::FRAMES as usize).contains(&distinct), "{s:?}: {distinct} distinct frames");
+            assert_eq!(distinct, 6, "{s:?}: the idle loop should reuse six drawings");
         }
     }
 

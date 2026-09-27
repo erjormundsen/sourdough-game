@@ -4,7 +4,7 @@
 use super::kit::*;
 use crate::art::Expr;
 use crate::art::face;
-use crate::draw::{DrawList, Screen};
+use crate::draw::DrawList;
 use crate::geom::{V2, arc, circle, ellipse, quad_bezier, rect, rounded_rect, v2};
 use crate::ink::Ink;
 use std::f32::consts::PI;
@@ -127,8 +127,8 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     }
     d.backing(&head);
     SKIN.ink(d, &head);
-    // Pale throat that puffs out in a little "gulp" once per idle loop.
-    let gulp = if matches!(r.pose.frame, 4 | 5) { 1.08 } else { 1.0 };
+    // Pale throat that puffs out in a little "gulp" once per idle loop (on the flick frame).
+    let gulp = if r.pose.twitch != 0.0 { 1.08 } else { 1.0 };
     d.clipped(&head, |d| {
         SKIN_PALE.ink(d, &ellipse(h + v2(0.0, 56.0), 60.0 * gulp, 24.0 * gulp, 0.0));
     });
@@ -173,12 +173,9 @@ fn dots(r: &Rig, d: &mut DrawList, clip: &[V2]) {
     if r.small() {
         return;
     }
-    d.clipped(clip, |d| {
-        for c in dot_grid(clip, 26.0, 22.0, 5.0) {
-            // Knock only the pink plate: yellow dots on coral.
-            d.knock_p(1.0, Screen::Solid, 0b0001, &circle(c, 5.0));
-        }
-    });
+    // Knock only the pink plate: yellow dots on coral.
+    let spots: Vec<Vec<V2>> = dot_grid(clip, 26.0, 22.0, 5.0).iter().map(|c| circle(*c, 5.0)).collect();
+    d.clipped(clip, |d| knock_many(d, 0b0001, &spots));
 }
 
 fn straps(r: &Rig, d: &mut DrawList) {

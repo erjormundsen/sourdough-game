@@ -160,8 +160,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
 
     // Head, feather bangs, then the hat.
     r.part(d, &head, DOWN);
+    // Two fluffy feather bangs under the hat; they flick with the idle twitch.
     for (a, b) in [(v2(-6.0, -40.0), v2(-16.0, -25.0)), (v2(4.0, -40.0), v2(10.0, -24.0))] {
-        let f = spike(h + a, h + b, 11.0, 2.0);
+        let f = rot(&spike(h + a, h + b, 11.0, 2.0), h + a, r.pose.twitch * 0.35);
         r.part(d, &f, DOWN);
     }
     r.part_with(d, &crown, |d, p| {

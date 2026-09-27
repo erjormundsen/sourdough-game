@@ -13,7 +13,7 @@
 
 use crate::art::face::{self, Expr};
 use crate::art::style::{DETAIL, INNER, OUTER};
-use crate::draw::{DrawList, Mode, Paint, Screen};
+use crate::draw::{Cmd, DrawList, Mode, Op, Paint, Screen, Shape};
 use crate::geom::{V2, circle, ellipse, quad_bezier, v2};
 use crate::ink::Ink;
 use std::f32::consts::{PI, TAU};
@@ -47,11 +47,12 @@ impl Lod {
     }
 }
 
-/// A quantised idle frame. The shop redraws three times a second; a 12-frame loop means the
-/// texture cache replays the whole idle after the first four seconds instead of rasterising.
+/// A quantised idle frame. The shop redraws three times a second. The loop is 12 ticks (four
+/// seconds: two slow breaths, one ear/whisker flick, one blink) built from only six distinct
+/// drawings, so a regular costs six rasterisations on their first visit and the texture cache
+/// replays the loop from then on.
 #[derive(Clone, Copy, Debug)]
 pub struct Pose {
-    pub frame: u32,
     /// Head bob (units, negative = up).
     pub bob: f32,
     /// Shoulder rise from breathing (units).
@@ -64,19 +65,19 @@ pub struct Pose {
 
 pub const FRAMES: u32 = 12;
 
+/// One two-second breath (six ticks): the head rises as the shoulders fill, then settles.
+const BREATH_BOB: [f32; 6] = [0.0, -1.0, -2.5, -3.0, -2.5, -1.0];
+const BREATH_RISE: [f32; 6] = [0.0, 0.5, 1.25, 1.5, 1.25, 0.5];
+
 pub fn pose(t: f32) -> Pose {
     let frame = ((t * 3.0).round() as i64).rem_euclid(FRAMES as i64) as u32;
-    let ph = frame as f32 / FRAMES as f32 * TAU;
-    let q = |v: f32| (v * 4.0).round() / 4.0;
+    let i = (frame % 6) as usize;
     Pose {
-        frame,
-        bob: q(-ph.sin() * 3.0),
-        breath: q((0.5 - 0.5 * (ph - 0.5).cos()) * 1.6),
-        twitch: match frame {
-            7 => 1.0,
-            8 => -0.45,
-            _ => 0.0,
-        },
+        bob: BREATH_BOB[i],
+        breath: BREATH_RISE[i],
+        // Ears, whiskers, bangs (and Momo's throat) flick once per loop...
+        twitch: if frame == 7 { 1.0 } else { 0.0 },
+        // ...and Content faces blink once, at the top of a breath.
         blink: frame == 10,
     }
 }
@@ -181,9 +182,23 @@ impl Rig {
         if !self.body {
             return;
         }
+        // Only the sliver of each offset part outside the part itself can ever show (the rest
+        // is covered by the character's own backing), so fill that ring: the XOR of the part
+        // and its offset copy. Same pixels as filling the whole offset part, a fraction of
+        // the halftone work.
         let off = v2(9.0, 7.0);
+        let paint = self.tex_paint(Ink::Blue, 0.22);
         for p in parts {
-            self.tex(d, &shift(p, off), Ink::Blue, 0.22);
+            d.fill_eo(paint, &[shift(p, off), p.to_vec()]);
+        }
+    }
+
+    /// The paint [`Rig::tex`] uses: union halftone, or a flat tint when printed small.
+    fn tex_paint(&self, ink: Ink, tone: f32) -> Paint {
+        if self.small() {
+            Paint { ink, tone: tone * 0.55, screen: Screen::Solid, mode: Mode::Add }
+        } else {
+            Paint::ht(ink, tone).add()
         }
     }
 
@@ -313,14 +328,8 @@ impl Rig {
 
     /// Halftone form shadow `shadow` kept inside `part` (a flat wash when printed small).
     pub fn shade(&self, d: &mut DrawList, part: &[V2], shadow: &[V2], ink: Ink, tone: f32) {
-        let small = self.small();
-        d.clipped(part, |d| {
-            if small {
-                d.fill_p(Paint { ink, tone: tone * 0.55, screen: Screen::Solid, mode: Mode::Add }, shadow);
-            } else {
-                d.ht_add(ink, tone, shadow);
-            }
-        });
+        let paint = self.tex_paint(ink, tone);
+        d.clipped(part, |d| d.fill_p(paint, shadow));
     }
 
     /// Form shading: a halftone crescent `width` deep along the side of `part` facing away
@@ -329,28 +338,30 @@ impl Rig {
         if tone <= 0.0 {
             return;
         }
+        // The crescent is the part minus its copy nudged towards the light: fill the XOR of
+        // the two (clipped to the part) so the halftone only runs over the thin crescent.
         let lit = shift(part, -dir.norm() * width);
-        d.clip_push(&outside(&lit));
-        self.shade(d, part, part, ink, tone);
-        d.clip_pop();
+        let paint = self.tex_paint(ink, tone);
+        d.clipped(part, |d| d.fill_eo(paint, &[part.to_vec(), lit]));
     }
 
     /// Halftone texture fill (flat when small), unioned with the plate.
     pub fn tex(&self, d: &mut DrawList, poly: &[V2], ink: Ink, tone: f32) {
-        if self.small() {
-            d.fill_p(Paint { ink, tone: tone * 0.55, screen: Screen::Solid, mode: Mode::Add }, poly);
-        } else {
-            d.ht_add(ink, tone, poly);
-        }
+        d.fill_p(self.tex_paint(ink, tone), poly);
     }
 
-    /// Dashed stitch line along `pts`.
+    /// Dashed stitch line along `pts`, printed as one command (a capsule per dash).
     pub fn stitches(&self, d: &mut DrawList, pts: &[V2], dash: f32, gap: f32) {
         if self.small() {
             return;
         }
-        for seg in dashes(pts, dash, gap) {
-            d.line(Ink::Key, self.detail() * 0.8, &seg);
+        let rad = self.detail() * 0.4;
+        let caps: Vec<Vec<V2>> = dashes(pts, dash, gap)
+            .iter()
+            .filter_map(|seg| Some(pill(*seg.first()?, *seg.last()?, rad)))
+            .collect();
+        if !caps.is_empty() {
+            d.fill_eo(Paint::solid(Ink::Key, 1.0), &caps);
         }
     }
 }
@@ -812,6 +823,32 @@ pub fn dot_grid(clip: &[V2], pitch: f32, row: f32, margin: f32) -> Vec<V2> {
     out
 }
 
+/// A light capsule (6 points per cap) from `a` to `b` with radius `rad`.
+pub fn pill(a: V2, b: V2, rad: f32) -> Vec<V2> {
+    let dir = if a.dist(b) > 1e-3 { (b - a).norm() } else { v2(1.0, 0.0) };
+    let ang = dir.angle();
+    let mut out = Vec::with_capacity(14);
+    for k in 0..=6 {
+        out.push(b + V2::from_angle(ang - PI * 0.5 + PI * k as f32 / 6.0) * rad);
+    }
+    for k in 0..=6 {
+        out.push(a + V2::from_angle(ang + PI * 0.5 + PI * k as f32 / 6.0) * rad);
+    }
+    out
+}
+
+/// Knock many small, non-overlapping shapes (polka dots, glints) out of `plates` in a single
+/// command: even-odd over disjoint shapes is their union, and one command rasterises far
+/// faster than hundreds of tiny ones.
+pub fn knock_many(d: &mut DrawList, plates: u8, polys: &[Vec<V2>]) {
+    if polys.is_empty() {
+        return;
+    }
+    let xf = d.xf();
+    let shape = Shape::PolysEo(polys.iter().map(|p| p.iter().map(|q| xf.apply(*q)).collect()).collect());
+    d.cmds.push(Cmd { op: Op::Knock { tone: 1.0, screen: Screen::Solid, plates }, shape });
+}
+
 /// Split a polyline into dashes.
 pub fn dashes(pts: &[V2], dash: f32, gap: f32) -> Vec<Vec<V2>> {
     let total = crate::geom::polyline_len(pts);
@@ -910,8 +947,12 @@ pub fn elbow_creases(r: &Rig, d: &mut DrawList, sleeve: &[V2], path: &[V2], rad:
 
 /// Soft halftone shadow cast by the head onto whatever `under` is (neck shadow).
 pub fn neck_shadow(r: &Rig, d: &mut DrawList, under: &[V2], head_rx: f32, head_ry: f32, drop: f32) {
+    // Only the crescent below the head shows (the head is drawn over the rest), so fill the
+    // shadow minus a head-sized copy of itself.
     let sh = ellipse(r.h + v2(0.0, drop), head_rx * 0.94, head_ry, 0.0);
-    r.shade(d, under, &sh, Ink::Blue, 0.27);
+    let head = ellipse(r.h, head_rx * 0.94, head_ry, 0.0);
+    let paint = r.tex_paint(Ink::Blue, 0.27);
+    d.clipped(under, |d| d.fill_eo(paint, &[sh, head]));
 }
 
 /// A shiny round button: fill, paper glint, contour.

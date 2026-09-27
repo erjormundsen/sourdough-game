@@ -200,11 +200,9 @@ fn polka(r: &Rig, d: &mut DrawList, clip: &[V2], pitch: f32, rad: f32) {
     if r.small() {
         return;
     }
-    d.clipped(clip, |d| {
-        for c in dot_grid(clip, pitch, pitch * 0.86, rad) {
-            d.knock_p(1.0, Screen::Solid, PLATES_COLOR, &circle(c, rad));
-        }
-    });
+    let dots: Vec<Vec<V2>> =
+        dot_grid(clip, pitch, pitch * 0.86, rad).iter().map(|c| circle(*c, rad)).collect();
+    d.clipped(clip, |d| knock_many(d, PLATES_COLOR, &dots));
 }
 
 /// A blue ribbon bow with paper dots, tied at the base of the floppy ear.

@@ -223,7 +223,8 @@ fn vnoise(p: V2, seed: u32) -> f32 {
 
 /// Off-centre radial gradient printed last-wins: nested copies of `body` shrinking towards
 /// `focus`, tone running from `rim` to `core`. The rings are gently warped so the steps read
-/// as an organic halftone gradient rather than a target.
+/// as an organic halftone gradient rather than a target. It must be the first ink on its
+/// plate inside the (backed) silhouette: rings that would print no ink are skipped.
 #[allow(clippy::too_many_arguments)]
 fn dome(
     d: &mut DrawList,
@@ -276,9 +277,9 @@ fn dome(
         let tone = (rim + (core - rim) * t.powf(curve)).clamp(0.0, 1.0);
         let polys: Vec<Vec<V2>> =
             if i + 1 < steps { vec![rings[i].clone(), pull(&rings[i + 1])] } else { vec![rings[i].clone()] };
-        if tone < 0.01 {
-            knock_many(d, 1.0, Screen::Solid, 1 << ink.idx(), &polys);
-        } else {
+        // Each dome is the first ink on its plate inside the (backed) loaf, so a ring that
+        // would print nothing is simply skipped.
+        if tone >= 0.01 {
             fill_many(d, Paint { ink, tone, screen, mode: crate::draw::Mode::Over }, &polys);
         }
     }

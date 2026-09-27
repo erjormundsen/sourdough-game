@@ -1,10 +1,15 @@
 //! Bakery sheets: dough, loaves, crumb, starter jars, Toasty and treats.
 //! Owned by the bakery-objects area (`proof_core::art::{bread, jar, oven, treats}`).
 //!
-//! * `bakery_loaves`      — raw doughs and a showcase of finished loaves (hero size)
-//! * `bakery_states`      — oven bake 0→1, reveal bloom 0→1, crust levels, in-game sizes, crumb
+//! * `bakery_hero`        — the set at the sizes the player sees up close
+//! * `bakery_loaves`      — raw doughs, a showcase of finished loaves, crumb shots
+//! * `bakery_states`      — oven bake 0→1, reveal bloom 0→1, crust levels, shop/zine/icon sizes
 //! * `bakery_jars`        — moods & microbiomes at 1×, plus the 0.42× and 0.8× shelf sizes
+//!   (the 0.8× jars carry a guide where the engine prints the starter's name)
 //! * `bakery_oven_treats` — Toasty's states and the treat tray (raw → finished, all sizes)
+//!
+//! `BAKERY_BENCH=<scale> artboard --sheet bakery` times the rasteriser on the heaviest
+//! bakery art instead (the screens rasterise on the main thread).
 
 use crate::Board;
 use proof_core::art::Expr;
@@ -384,11 +389,12 @@ fn oven_and_treats(out: &Path, scale: f32) {
     b.save(&out.join("bakery_oven_treats.png"));
 }
 
-/// `BAKERY_BENCH=1 artboard --sheet bakery`: time the rasteriser on the heaviest bakery art
-/// at a phone-ish scale (the screens rasterise on the main thread, so this is frame time).
+/// `BAKERY_BENCH=<scale> artboard --sheet bakery`: time the rasteriser on the heaviest bakery art
+/// (default scale 1.5, phone-ish; the screens rasterise on the main thread, so this is frame time).
 fn bench() {
     use proof_raster::{RasterConfig, rasterize};
-    let cfg = RasterConfig { scale: 1.5, ..RasterConfig::default() };
+    let scale: f32 = std::env::var("BAKERY_BENCH").ok().and_then(|s| s.parse().ok()).unwrap_or(1.5);
+    let cfg = RasterConfig { scale, ..RasterConfig::default() };
     let hero: Look = (
         Recipe::Cheddar,
         Some(Pattern::Wheat),
@@ -405,6 +411,8 @@ fn bench() {
     let cases: Vec<(&str, DrawList)> = vec![
         ("loaf r165 (score/reveal)", one(&|d| loaf_top(d, &look_view(&hero, 165.0, 1.0, 0.9, 3)))),
         ("dough r165 (scoring)", one(&|d| loaf_top(d, &look_view(&hero, 165.0, 0.0, 0.0, 3)))),
+        ("loaf r118 (reveal, two per card)", one(&|d| loaf_top(d, &look_view(&hero, 118.0, 1.0, 0.6, 3)))),
+        ("loaf r62 (shop shelf)", one(&|d| loaf_top(d, &look_view(&hero, 62.0, 1.0, 0.9, 3)))),
         ("crumb 200x130", one(&|d| crumb_slice(d, 200.0, 130.0, 0.9, 0.6, 3))),
         ("jar x0.8", one(&|d| d.with(Xf::IDENTITY.scaled(0.8), |d| jar(d, &JarView::default())))),
         (

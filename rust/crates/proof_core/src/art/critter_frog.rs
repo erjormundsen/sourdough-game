@@ -34,8 +34,14 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     let paths: Vec<Vec<V2>> = [-1.0f32, 1.0].iter().map(|&sx| r.arm_path(sx, 92.0, 48.0)).collect();
     let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 16.5, 13.5)).collect();
     let sleeves: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(&p[..6], 19.0, 18.0)).collect();
-    let hands: Vec<V2> = [-1.0f32, 1.0].iter().map(|&sx| v2(sx * 44.0, REST_Y + 2.0)).collect();
-    let palms: Vec<Vec<V2>> = hands.iter().map(|c| paw_shape(*c + v2(0.0, -4.0), 34.0, 22.0)).collect();
+    let hands: Vec<(V2, f32)> = [-1.0f32, 1.0].iter().map(|&sx| r.paw_place(sx, 44.0, 92.0, 2.0)).collect();
+    let palms: Vec<Vec<V2>> =
+        hands.iter().map(|(c, tilt)| rot(&paw_shape(*c + v2(0.0, -4.0), 34.0, 22.0), *c, *tilt)).collect();
+    let pads: Vec<Vec<Vec<V2>>> = hands
+        .iter()
+        .enumerate()
+        .map(|(i, (c, tilt))| toe_pads(*c, *tilt, r.raised(if i == 0 { -1.0 } else { 1.0 })))
+        .collect();
     let leaf_base = v2(-70.0, -100.0);
     let leaf_tip = v2(-112.0, -184.0);
     let leaf = r.breathe(&soft_spike(leaf_base, leaf_tip, 56.0, -9.0));
@@ -53,10 +59,8 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for p in &palms {
             r.halo(d, p);
         }
-        for c in &hands {
-            for pad in toe_pads(*c) {
-                r.halo(d, &pad);
-            }
+        for pad in pads.iter().flatten() {
+            r.halo(d, pad);
         }
     }
     for b in &bumps {
@@ -91,6 +95,8 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         });
         neck_shadow(r, d, &torso, 94.0, 56.0, 14.0);
         straps(r, d);
+    }
+    let limbs = |d: &mut DrawList| {
         for (a, open) in &arms {
             d.backing(a);
             SKIN.ink(d, a);
@@ -102,12 +108,16 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             dots(r, d, s);
             d.line(Ink::Key, r.inner(), open);
         }
-        for (c, p) in hands.iter().zip(palms.iter()) {
-            r.part(d, p, SKIN);
-            for pad in toe_pads(*c) {
-                r.part(d, &pad, SKIN_PALE);
+        for (i, (palm, hand_pads)) in palms.iter().zip(pads.iter()).enumerate() {
+            r.part(d, palm, SKIN);
+            for pad in hand_pads {
+                r.part(d, pad, SKIN_PALE);
             }
+            r.wave_marks(d, hands[i].0 + v2(0.0, -30.0), if i == 0 { -1.0 } else { 1.0 });
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     // Head: bumps and face merge into one silhouette without seams.
@@ -142,11 +152,21 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         frog_eye(r, d, *c + v2(0.0, -2.0), if i == 0 { -1.0 } else { 1.0 });
     }
     frog_mouth(r, d, h + v2(0.0, 30.0));
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
-/// Three sticky toe pads resting on the counter edge.
-fn toe_pads(c: V2) -> Vec<Vec<V2>> {
-    [(-13.0, -1.5), (0.0, 1.0), (13.0, -1.5)].iter().map(|(x, y)| circle(c + v2(*x, *y - 5.0), 7.2)).collect()
+/// Three sticky toe pads at the fingertips: along the counter edge, or up top when the hand
+/// is `raised`.
+fn toe_pads(c: V2, tilt: f32, raised: bool) -> Vec<Vec<V2>> {
+    [(-13.0, -1.5), (0.0, 1.0), (13.0, -1.5)]
+        .iter()
+        .map(|(x, y)| {
+            let p = if raised { c + v2(*x * 0.9, -28.0 - *y) } else { c + v2(*x, *y - 5.0) };
+            circle(c + (p - c).rotate(tilt), 7.2)
+        })
+        .collect()
 }
 
 fn dots(r: &Rig, d: &mut DrawList, clip: &[V2]) {

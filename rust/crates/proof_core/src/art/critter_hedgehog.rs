@@ -82,11 +82,11 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     let back_quills = r.breathe(&back_quills);
     let arms: Vec<(Vec<V2>, Vec<V2>)> =
         [-1.0f32, 1.0].iter().map(|&sx| tube_parts(&r.arm_path(sx, 90.0, 44.0), 18.0, 14.5)).collect();
-    let paws: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    let paws: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 41.0, REST_Y + 4.0);
-            (c, paw_shape(c, 33.0, 26.0))
+            let (c, tilt) = r.paw_place(sx, 41.0, 90.0, 4.0);
+            (c, tilt, rot(&paw_shape(c, 33.0, 26.0), c, tilt))
         })
         .collect();
 
@@ -100,7 +100,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for (a, _) in &arms {
             r.halo(d, a);
         }
-        for (_, p) in &paws {
+        for (_, _, p) in &paws {
             r.halo(d, p);
         }
     }
@@ -111,15 +111,22 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         r.part(d, &torso, BODY);
         apron(r, d);
         neck_shadow(r, d, &torso, 72.0, 64.0, 10.0);
+    }
+    let limbs = |d: &mut DrawList| {
         for (poly, open) in &arms {
             d.backing(poly);
             BODY.ink(d, poly);
             d.line(Ink::Key, r.inner(), open);
         }
-        for (c, p) in &paws {
+        for (i, (c, tilt, p)) in paws.iter().enumerate() {
+            let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part(d, p, PAW);
-            toes(r, d, *c, 33.0, 26.0, 3);
+            toes_at(r, d, *c, 33.0, 26.0, 3, *tilt, r.raised(sx));
+            r.wave_marks(d, *c + v2(0.0, -26.0), sx);
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     // Quills: dark back crown with pale tips, lighter front crown, a few quill strokes.
@@ -159,6 +166,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     crate::art::face::mouth(d, h + v2(0.0, 48.0), 76.0, r.expr);
 
     daisy(r, d, h + v2(-50.0, -46.0));
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
 /// Pale banded tips on each quill (clipped to the crown).

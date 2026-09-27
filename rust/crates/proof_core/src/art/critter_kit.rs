@@ -85,6 +85,19 @@ pub fn pose(t: f32) -> Pose {
 // Rig
 // ---------------------------------------------------------------------------
 
+/// What the arms are doing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArmPose {
+    /// Both paws on the counter edge.
+    Rest,
+    /// Both paws pressed to the cheeks ("loved it!").
+    Cheer,
+    /// One paw up in a little wave ("thanks!").
+    Wave,
+    /// Paws clasped under the chin ("pretty please?").
+    Plead,
+}
+
 /// Everything a species needs to draw one frame.
 #[derive(Clone, Copy, Debug)]
 pub struct Rig {
@@ -180,14 +193,78 @@ impl Rig {
         }
     }
 
-    /// The shared arm pose: shoulder, down the side, elbow on the counter, wrist turning in.
-    /// `w` is the side reach (half-width at the elbow), `wrist` the wrist's x.
+    /// Body language for the expression: the shop's three reactions each get a pose.
+    pub fn arm_pose(&self) -> ArmPose {
+        if !self.body {
+            return ArmPose::Rest;
+        }
+        match self.expr {
+            Expr::Excited => ArmPose::Cheer,
+            Expr::Happy => ArmPose::Wave,
+            Expr::Hungry => ArmPose::Plead,
+            _ => ArmPose::Rest,
+        }
+    }
+
+    /// Excited (a "loved it!" reaction) throws both paws up to the cheeks.
+    pub fn cheering(&self) -> bool {
+        self.arm_pose() == ArmPose::Cheer
+    }
+
+    /// Raised arms cross in front of the chin, so they are drawn after the head.
+    pub fn limbs_in_front(&self) -> bool {
+        self.arm_pose() != ArmPose::Rest
+    }
+
+    /// Whether the arm on side `sx` is lifted off the counter in this pose.
+    pub fn raised(&self, sx: f32) -> bool {
+        match self.arm_pose() {
+            ArmPose::Rest => false,
+            ArmPose::Wave => sx > 0.0,
+            ArmPose::Cheer | ArmPose::Plead => true,
+        }
+    }
+
+    /// The shared arm path for side `sx`. Resting: shoulder, down the side, elbow on the
+    /// counter, wrist turning in (`w` is the side reach, `wrist` the wrist's x). Raised arms
+    /// swing the forearm up from the elbow to the paw placed by [`Rig::paw_place`].
     pub fn arm_path(&self, sx: f32, w: f32, wrist: f32) -> Vec<V2> {
-        self.breathe(&spline(
-            &[v2(sx * w * 0.87, -92.0), v2(sx * w, -58.0), v2(sx * w * 0.84, -37.0), v2(sx * wrist, -40.0)],
-            false,
-            6,
-        ))
+        let sh = v2(sx * w * 0.87, -92.0);
+        let ctrl = match (self.arm_pose(), self.raised(sx)) {
+            (ArmPose::Cheer, _) => {
+                [sh, v2(sx * (w + 3.0), -70.0), v2(sx * w * 0.9, -84.0), v2(sx * w * 0.66, -104.0)]
+            }
+            (ArmPose::Wave, true) => {
+                [sh, v2(sx * (w + 8.0), -80.0), v2(sx * (w + 12.0), -100.0), v2(sx * (w + 4.0), -120.0)]
+            }
+            (ArmPose::Plead, _) => [sh, v2(sx * w, -62.0), v2(sx * w * 0.66, -58.0), v2(sx * w * 0.3, -68.0)],
+            _ => [sh, v2(sx * w, -58.0), v2(sx * w * 0.84, -37.0), v2(sx * wrist, -40.0)],
+        };
+        self.breathe(&spline(&ctrl, false, 6))
+    }
+
+    /// Where a paw goes: its bottom-centre and tilt. Resting paws sit on the counter at `x`;
+    /// raised paws land at the end of [`Rig::arm_path`]: against the jaw (cheer), up by the
+    /// head (wave), or clasped together under the chin (plead).
+    pub fn paw_place(&self, sx: f32, x: f32, w: f32, drop: f32) -> (V2, f32) {
+        match (self.arm_pose(), self.raised(sx)) {
+            (ArmPose::Cheer, _) => (v2(sx * w * 0.62, -106.0), -sx * 0.38),
+            (ArmPose::Wave, true) => (v2(sx * (w + 1.0), -122.0), sx * 0.22),
+            (ArmPose::Plead, _) => (v2(sx * 13.0, -70.0), -sx * 0.62),
+            _ => (v2(sx * x, REST_Y + drop), 0.0),
+        }
+    }
+
+    /// Little motion marks beside a waving paw whose top is at `top`.
+    pub fn wave_marks(&self, d: &mut DrawList, top: V2, sx: f32) {
+        if self.small() || self.arm_pose() != ArmPose::Wave || !self.raised(sx) {
+            return;
+        }
+        for (k, rad) in [(0.0f32, 12.0f32), (1.0, 19.0)] {
+            let c = top + v2(sx * (6.0 + k * 3.0), 10.0);
+            let a0 = if sx > 0.0 { -PI * 0.42 } else { -PI * 0.58 - PI * 0.25 };
+            d.line(Ink::Key, self.detail(), &crate::geom::arc(c, rad, a0, a0 + PI * 0.25));
+        }
     }
 
     /// `INNER` contour around the union of `parts` only: each part's contour is clipped to
@@ -779,16 +856,21 @@ pub fn paw_shape(c: V2, w: f32, h: f32) -> Vec<V2> {
     ])
 }
 
-/// Toe notches rising from the bottom of a paw.
-pub fn toes(r: &Rig, d: &mut DrawList, c: V2, w: f32, h: f32, n: usize) {
+/// Toe notches on a paw whose bottom-centre is `c`, tilted by `tilt` about it. Resting paws
+/// show their toes along the bottom edge; `raised` paws at the fingertips.
+#[allow(clippy::too_many_arguments)]
+pub fn toes_at(r: &Rig, d: &mut DrawList, c: V2, w: f32, h: f32, n: usize, tilt: f32, raised: bool) {
     if r.small() {
         return;
     }
     for i in 1..n {
         let x = (i as f32 / n as f32 - 0.5) * w * 0.86;
-        let a = c + v2(x, -h * 0.02);
-        let b = c + v2(x * 0.9, -h * 0.42);
-        r.detail_line(d, &[a, b]);
+        let (a, b) = if raised {
+            (c + v2(x * 0.8, -h * 1.0), c + v2(x * 0.9, -h * 0.62))
+        } else {
+            (c + v2(x, -h * 0.02), c + v2(x * 0.9, -h * 0.42))
+        };
+        r.detail_line(d, &rot(&[a, b], c, tilt));
     }
 }
 

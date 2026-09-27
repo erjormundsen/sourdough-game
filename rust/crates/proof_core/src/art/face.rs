@@ -129,7 +129,7 @@ pub fn eye(d: &mut DrawList, e: V2, s: f32, expr: Expr, side: f32, lw: f32) {
     match expr {
         Expr::Content => oval_eye(d, e, s * 0.073, s * 0.095, true, tiny),
         Expr::Hungry => {
-            // Big, glossy, pleading: a second catch-light low on the other side.
+            // Big, glossy, pleading: the lower catch-light swells into a wet shine.
             oval_eye(d, e + v2(0.0, -s * 0.004), s * 0.083, s * 0.102, true, tiny);
             if !tiny {
                 d.knock(&circle(e + v2(s * 0.03, s * 0.042), s * 0.016));

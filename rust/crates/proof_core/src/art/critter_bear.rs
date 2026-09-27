@@ -33,22 +33,13 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         v2(100.0, -60.0),
         v2(102.0, 0.0),
     ]));
-    let paths: Vec<Vec<V2>> = [-1.0f32, 1.0]
-        .iter()
-        .map(|&sx| {
-            r.breathe(&spline(
-                &[v2(sx * 80.0, -92.0), v2(sx * 91.0, -58.0), v2(sx * 78.0, -36.0), v2(sx * 54.0, -38.0)],
-                false,
-                6,
-            ))
-        })
-        .collect();
+    let paths: Vec<Vec<V2>> = [-1.0f32, 1.0].iter().map(|&sx| r.arm_path(sx, 91.0, 54.0)).collect();
     let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 23.0, 17.5)).collect();
-    let paws: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    let paws: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 42.0, REST_Y + 5.0);
-            (c, paw_shape(c, 42.0, 33.0))
+            let (c, tilt) = r.paw_place(sx, 42.0, 91.0, 5.0);
+            (c, tilt, rot(&paw_shape(c, 42.0, 33.0), c, tilt))
         })
         .collect();
 
@@ -61,7 +52,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for (a, _) in &arms {
             r.halo(d, a);
         }
-        for (_, p) in &paws {
+        for (_, _, p) in &paws {
             r.halo(d, p);
         }
     }
@@ -97,7 +88,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             let b = r.breathe(&[v2(0.0, y)])[0];
             button(r, d, b, 5.5, Coat::new(0.16, 0.06, 0.0, 0.0));
         }
-        // Sleeves with rolled cuffs, then paws.
+    }
+    // Sleeves, then paws: on the counter, or (cheering) up against the cheeks after the head.
+    let limbs = |d: &mut DrawList| {
         for (i, (poly, open)) in arms.iter().enumerate() {
             let sx = if i == 0 { -1.0 } else { 1.0 };
             d.backing(poly);
@@ -107,13 +100,18 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             d.line(Ink::Key, r.inner(), open);
             elbow_creases(r, d, poly, &paths[i], 20.0, false);
         }
-        for (c, p) in &paws {
+        for (i, (c, tilt, p)) in paws.iter().enumerate() {
+            let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part_with(d, p, |d, p| {
                 FUR.ink(d, p);
                 r.rim_shade(d, p, v2(0.7, 1.0), 6.0, Ink::Blue, 0.26);
             });
-            toes(r, d, *c, 42.0, 33.0, 3);
+            toes_at(r, d, *c, 42.0, 33.0, 3, *tilt, r.raised(sx));
+            r.wave_marks(d, *c + v2(0.0, -33.0), sx);
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     // Ears behind, then the head.
@@ -142,6 +140,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     r.clear_cheeks(d, h + v2(0.0, 1.0), 104.0, 0.45);
     r.face(d, h + v2(0.0, 1.0), 104.0, V2::ZERO, true, None);
     crate::art::face::mouth(d, m, 88.0, r.expr);
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
 /// Blue flannel: soft bands that overprint where they cross, pink pinstripes.

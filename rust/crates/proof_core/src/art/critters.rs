@@ -9,7 +9,26 @@
 //! bell, Otto's pebble).
 //!
 //! Inking follows the kit's halo technique (see `critter_kit.rs`): an `OUTER` silhouette,
-//! `INNER` lines where parts meet, `DETAIL` for fur, stitches and whiskers.
+//! `INNER` lines where parts meet, `DETAIL` for fur, stitches and whiskers. Skins get a riso
+//! knockout under the blush so cheeks print clean pink, clothes carry halftone form shading,
+//! and a blue halftone "shadow plate" offsets the silhouette onto the wall behind.
+//!
+//! # Poses and life
+//! The expression picks the body language, so each of the shop's reactions reads at a glance:
+//! * **Resting** (Content and the rest): paws on the counter edge.
+//! * **Waving** (Happy, "yum, thanks!"): one paw up by the head with little motion marks.
+//! * **Cheering** (Excited, "loved it!"): paws (wings, hooves, toe pads) pressed to the
+//!   cheeks; Otto hugs his pebble under his chin instead.
+//! * **Pleading** (Hungry, sold out / not today): paws clasped under the chin.
+//!
+//! Raised arms are drawn after the head, so they cross in front of the chin and jaw.
+//! * **Idle**: `CritterView::t` drives a 12-frame loop at the shop's three redraws a second (a
+//!   bob, breathing shoulders, an ear/whisker flick, a slow blink, Momo's throat gulp). The
+//!   frames repeat exactly, so the texture cache serves the loop after its first pass.
+//!
+//! # Print size
+//! Busts check their transform: below ~0.45× (the Tomorrow board) halftones turn into flat
+//! tints and hairline details drop out, so small regulars stay clean instead of speckled.
 
 #[path = "critter_kit.rs"]
 mod kit;
@@ -46,7 +65,8 @@ pub const HEAD_C: V2 = v2(0.0, -168.0);
 /// Where the paws rest, in bust space: the shop counter's top edge when the shop prints the
 /// bust at 1.3× with its origin 40 units below the counter top.
 pub const PAW_REST_Y: f32 = kit::REST_Y;
-/// Radius that [`critter_head`] portraits fit within (ears and hats included).
+/// Radius that [`critter_head`] portraits fit within (ears and hats included; whiskers may
+/// poke a little past it).
 pub const HEAD_R: f32 = 96.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -130,14 +150,18 @@ mod tests {
         }
     }
 
+    /// Every pose (resting, waving, cheering, pleading) through the idle loop stays inside the
+    /// footprint, give or take the halo stroke and the offset shadow plate.
     #[test]
     fn busts_respect_their_footprint() {
         for s in Species::ALL {
-            for t in [0.0, 1.0, 2.0, 3.0] {
-                let b = bust(s, Expr::Content, t).bounds().unwrap();
-                assert!(b.y >= -(BUST_H + 8.0), "{s:?} too tall: {b:?}");
-                let half = BUST_W * 0.5;
-                assert!(b.x >= -(half + 12.0) && b.x + b.w <= half + 22.0, "{s:?} too wide: {b:?}");
+            for e in Expr::ALL {
+                for t in [0.0, 1.0, 2.0, 3.0] {
+                    let b = bust(s, e, t).bounds().unwrap();
+                    assert!(b.y >= -(BUST_H + 8.0), "{s:?} {e:?} too tall: {b:?}");
+                    let half = BUST_W * 0.5;
+                    assert!(b.x >= -(half + 12.0) && b.x + b.w <= half + 22.0, "{s:?} {e:?} too wide: {b:?}");
+                }
             }
         }
     }

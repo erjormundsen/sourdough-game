@@ -73,16 +73,36 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         v2(86.0, -54.0),
         v2(88.0, 0.0),
     ]));
-    let paths: Vec<Vec<V2>> = [-1.0f32, 1.0].iter().map(|&sx| r.arm_path(sx, 84.0, 34.0)).collect();
-    let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 17.0, 14.0)).collect();
-    let paws: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    // Resting: paws round the pebble on the counter. Cheering: he hugs it up under his chin.
+    let hug = r.cheering();
+    let paths: Vec<Vec<V2>> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 26.0, REST_Y + 3.0);
-            (c, rot(&paw_shape(c, 26.0, 24.0), c, sx * 0.25))
+            if hug {
+                let ctrl =
+                    [v2(sx * 73.0, -92.0), v2(sx * 88.0, -70.0), v2(sx * 70.0, -70.0), v2(sx * 40.0, -84.0)];
+                r.breathe(&spline(&ctrl, false, 6))
+            } else {
+                r.arm_path(sx, 84.0, 34.0)
+            }
         })
         .collect();
-    let pebble = ellipse(v2(0.0, REST_Y - 11.0), 22.0, 15.0, 0.08);
+    let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 17.0, 14.0)).collect();
+    let paws: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
+        .iter()
+        .map(|&sx| {
+            let (c, tilt) = if hug {
+                (v2(sx * 27.0, -80.0), -sx * 0.5)
+            } else if r.raised(sx) {
+                r.paw_place(sx, 26.0, 84.0, 3.0)
+            } else {
+                (v2(sx * 26.0, REST_Y + 3.0), sx * 0.25)
+            };
+            (c, tilt, rot(&paw_shape(c, 26.0, 24.0), c, tilt))
+        })
+        .collect();
+    let pebble_c = if hug { v2(0.0, -94.0) } else { v2(0.0, REST_Y - 11.0) };
+    let pebble = ellipse(pebble_c, 22.0, 15.0, 0.08);
 
     if r.body {
         let mut sil: Vec<&[V2]> = vec![&torso, &head];
@@ -93,7 +113,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             r.halo(d, a);
         }
         r.halo(d, &pebble);
-        for (_, p) in &paws {
+        for (_, _, p) in &paws {
             r.halo(d, p);
         }
     }
@@ -121,6 +141,8 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         d.clipped(&torso, |d| r.seam(d, &neck));
         d.outline(Ink::Key, r.inner(), &torso);
         neck_shadow(r, d, &torso, 82.0, 60.0, 8.0);
+    }
+    let limbs = |d: &mut DrawList| {
         for (i, (a, open)) in arms.iter().enumerate() {
             let sx = if i == 0 { -1.0 } else { 1.0 };
             d.backing(a);
@@ -135,20 +157,25 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             r.rim_shade(d, p, v2(0.6, 1.0), 5.0, Ink::Key, 0.3);
             if !r.small() {
                 for (x, y) in [(-9.0, -3.0), (6.0, 4.0), (12.0, -5.0), (-2.0, 7.0)] {
-                    d.fill(Ink::Key, 0.5, &circle(v2(x, REST_Y - 11.0 + y), 1.3));
+                    d.fill(Ink::Key, 0.5, &circle(pebble_c + v2(x, y), 1.3));
                 }
                 d.knock_p(
                     1.0,
                     Screen::Solid,
                     PLATES_COLOR,
-                    &ellipse(v2(-8.0, REST_Y - 19.0), 5.0, 2.6, -0.2),
+                    &ellipse(pebble_c + v2(-8.0, -8.0), 5.0, 2.6, -0.2),
                 );
             }
         });
-        for (c, p) in &paws {
+        for (i, (c, tilt, p)) in paws.iter().enumerate() {
+            let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part(d, p, FUR);
-            toes(r, d, *c, 26.0, 24.0, 3);
+            toes_at(r, d, *c, 26.0, 24.0, 3, *tilt, hug || r.raised(sx));
+            r.wave_marks(d, *c + v2(0.0, -24.0), sx);
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     for (e, inner) in &ears {
@@ -205,6 +232,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
                 r.detail_line(d, &bow(a, b, sx * 2.5, 8));
             }
         }
+    }
+    if r.limbs_in_front() {
+        limbs(d);
     }
 }
 

@@ -54,11 +54,11 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     ]));
     let paths: Vec<Vec<V2>> = [-1.0f32, 1.0].iter().map(|&sx| r.arm_path(sx, 88.0, 44.0)).collect();
     let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 18.5, 15.0)).collect();
-    let paws: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    let paws: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 40.0, REST_Y + 4.0);
-            (c, paw_shape(c, 31.0, 26.0))
+            let (c, tilt) = r.paw_place(sx, 40.0, 88.0, 4.0);
+            (c, tilt, rot(&paw_shape(c, 31.0, 26.0), c, tilt))
         })
         .collect();
 
@@ -71,7 +71,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for (a, _) in &arms {
             r.halo(d, a);
         }
-        for (_, p) in &paws {
+        for (_, _, p) in &paws {
             r.halo(d, p);
         }
     }
@@ -80,8 +80,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     }
     r.halo(d, &head);
 
-    if r.body {
-        tailcoat(r, d, &torso);
+    let limbs = |d: &mut DrawList| {
         for (i, (poly, open)) in arms.iter().enumerate() {
             d.backing(poly);
             COAT.ink(d, poly);
@@ -89,11 +88,24 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             d.line(Ink::Key, r.inner(), open);
             elbow_creases(r, d, poly, &paths[i], 16.0, true);
         }
-        notebook(r, d);
-        pen(r, d, v2(44.0, -40.0), v2(10.0, -70.0));
-        for (c, p) in &paws {
+        if !r.limbs_in_front() {
+            notebook(r, d);
+            pen(r, d, v2(44.0, -40.0), v2(10.0, -70.0));
+        }
+        for (i, (c, tilt, p)) in paws.iter().enumerate() {
+            let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part(d, p, Coat::PAPER);
-            toes(r, d, *c, 32.0, 26.0, 3);
+            toes_at(r, d, *c, 32.0, 26.0, 3, *tilt, r.raised(sx));
+            r.wave_marks(d, *c + v2(0.0, -26.0), sx);
+        }
+    };
+    if r.body {
+        tailcoat(r, d, &torso);
+        if r.limbs_in_front() {
+            // The notebook stays propped on the counter while his paws are busy.
+            notebook(r, d);
+        } else {
+            limbs(d);
         }
     }
 
@@ -142,6 +154,10 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         // A permanently raised brow over the monocle.
         let b = fc + v2(27.0, -30.0);
         d.line(Ink::Key, r.detail() * 1.4, &crate::geom::arc(b + v2(0.0, 8.0), 11.0, PI * 1.22, PI * 1.78));
+    }
+
+    if r.limbs_in_front() {
+        limbs(d);
     }
 
     // Whiskers (they twitch).

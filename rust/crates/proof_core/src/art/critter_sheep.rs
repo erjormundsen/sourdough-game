@@ -44,11 +44,11 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             (closed, fluffy)
         })
         .collect();
-    let hooves: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    let hooves: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 38.0, REST_Y + 4.0);
-            (c, paw_shape(c, 26.0, 22.0))
+            let (c, tilt) = r.paw_place(sx, 38.0, 88.0, 4.0);
+            (c, tilt, rot(&paw_shape(c, 26.0, 22.0), c, tilt))
         })
         .collect();
 
@@ -76,7 +76,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for (a, _) in &arms {
             r.halo(d, a);
         }
-        for (_, p) in &hooves {
+        for (_, _, p) in &hooves {
             r.halo(d, p);
         }
     }
@@ -93,22 +93,32 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         });
         curls(r, d, &wool, crate::geom::rect(-44.0, -76.0, 88.0, 30.0), 4, 7);
         scarf(r, d);
+    }
+    let limbs = |d: &mut DrawList| {
         for (i, (a, open)) in arms.iter().enumerate() {
             d.backing(a);
             WOOL.ink(d, a);
             r.rim_shade(d, a, v2(0.8, 1.0), 7.0, Ink::Blue, 0.22);
             d.line(Ink::Key, r.inner(), open);
-            let sx = if i == 0 { -1.0 } else { 1.0 };
-            let area = crate::geom::rect(if sx < 0.0 { -96.0 } else { 70.0 }, -84.0, 26.0, 30.0);
-            curls(r, d, a, area, 2, 31 + i as u32);
-        }
-        for (c, p) in &hooves {
-            r.part(d, p, HOOF);
-            if !r.small() {
-                d.knock_line(1.0, r.detail(), &[*c + v2(0.0, 1.0), *c + v2(0.0, -10.0)], false);
-                d.knock_p(0.8, Screen::Solid, PLATES_ALL, &ellipse(*c + v2(-6.0, -15.0), 3.5, 2.2, -0.4));
+            if let Some(b) = crate::geom::Rect::of_points(a) {
+                let area =
+                    crate::geom::rect(b.x + 8.0, b.y + 10.0, (b.w - 16.0).max(1.0), (b.h * 0.5).max(1.0));
+                curls(r, d, a, area, 2, 31 + i as u32);
             }
         }
+        for (i, (c, tilt, p)) in hooves.iter().enumerate() {
+            r.wave_marks(d, *c + v2(0.0, -22.0), if i == 0 { -1.0 } else { 1.0 });
+            r.part(d, p, HOOF);
+            if !r.small() {
+                let cleft = rot(&[*c + v2(0.0, 1.0), *c + v2(0.0, -10.0)], *c, *tilt);
+                d.knock_line(1.0, r.detail(), &cleft, false);
+                let glint = rot(&ellipse(*c + v2(-6.0, -15.0), 3.5, 2.2, -0.4), *c, *tilt);
+                d.knock_p(0.8, Screen::Solid, PLATES_ALL, &glint);
+            }
+        }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     for (e, inner) in &ears {
@@ -131,6 +141,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     r.detail_line(d, &[nose_c + v2(0.0, 4.0), m + v2(0.0, -1.5)]);
     r.face(d, h + v2(0.0, 16.0), 88.0, V2::ZERO, true, None);
     crate::art::face::mouth(d, m, 76.0, r.expr);
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
 /// Wool curls: little spirals scattered over `area` (x, y, w, h), kept inside `clip`.

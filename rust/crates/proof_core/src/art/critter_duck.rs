@@ -60,11 +60,19 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     ]));
     let paths: Vec<Vec<V2>> = [-1.0f32, 1.0].iter().map(|&sx| r.arm_path(sx, 84.0, 44.0)).collect();
     let arms: Vec<(Vec<V2>, Vec<V2>)> = paths.iter().map(|p| tube_parts(p, 17.0, 14.0)).collect();
-    let wings: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    // Wing tips: fingers point inwards on the counter; cheering turns them up to the cheeks.
+    let wings: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 39.0, REST_Y + 4.0);
-            (c, wing_tip(c, sx))
+            let (c, _) = r.paw_place(sx, 39.0, 84.0, 4.0);
+            // Wing fingers point inwards at rest; raised wings turn them up.
+            let tilt = match (r.arm_pose(), r.raised(sx)) {
+                (ArmPose::Cheer, _) => sx * 1.19,
+                (ArmPose::Wave, true) => sx * 1.8,
+                (ArmPose::Plead, _) => sx * 0.55,
+                _ => 0.0,
+            };
+            (c, tilt, rot(&wing_tip(c, sx), c, tilt))
         })
         .collect();
 
@@ -76,7 +84,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for (a, _) in &arms {
             r.halo(d, a);
         }
-        for (_, w) in &wings {
+        for (_, _, w) in &wings {
             r.halo(d, w);
         }
     }
@@ -123,6 +131,8 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
                 drop(r, d, r.breathe(&[v2(x, y)])[0], 5.0 * s);
             }
         }
+    }
+    let limbs = |d: &mut DrawList| {
         for (i, (poly, open)) in arms.iter().enumerate() {
             d.backing(poly);
             OILSKIN.ink(d, poly);
@@ -130,17 +140,22 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             d.line(Ink::Key, r.inner(), open);
             elbow_creases(r, d, poly, &paths[i], 15.0, false);
         }
-        for (i, (c, w)) in wings.iter().enumerate() {
+        for (i, (c, tilt, w)) in wings.iter().enumerate() {
             let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part(d, w, DOWN);
             if !r.small() {
                 // Feather separations running back from the fingers.
                 for (y, len) in [(-15.0f32, 14.0f32), (-6.0, 12.0)] {
                     let a = *c + v2(-sx * 12.0, y);
-                    r.detail_line(d, &bow(a, a + v2(sx * len, y * 0.15 - 3.0), sx * 1.5, 4));
+                    let line = bow(a, a + v2(sx * len, y * 0.15 - 3.0), sx * 1.5, 4);
+                    r.detail_line(d, &rot(&line, *c, *tilt));
                 }
             }
+            r.wave_marks(d, *c + v2(sx * 6.0, -30.0), sx);
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     // Head, feather bangs, then the hat.
@@ -182,6 +197,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     r.clear_cheeks(d, h + v2(0.0, -2.0), 100.0, 0.75);
     r.face(d, h + v2(0.0, -2.0), 100.0, V2::ZERO, true, None);
     bill(r, d, h + v2(0.0, 6.0));
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
 /// The bill: upper and lower mandibles that part with the expression.

@@ -71,11 +71,11 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             ]))
         })
         .collect();
-    let paws: Vec<(V2, Vec<V2>)> = [-1.0f32, 1.0]
+    let paws: Vec<(V2, f32, Vec<V2>)> = [-1.0f32, 1.0]
         .iter()
         .map(|&sx| {
-            let c = v2(sx * 35.0, REST_Y + 4.0);
-            (c, paw_shape(c, 30.0, 25.0))
+            let (c, tilt) = r.paw_place(sx, 35.0, 76.0, 4.0);
+            (c, tilt, rot(&paw_shape(c, 30.0, 25.0), c, tilt))
         })
         .collect();
 
@@ -90,7 +90,7 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
         for p in &puffs {
             r.halo(d, p);
         }
-        for (_, p) in &paws {
+        for (_, _, p) in &paws {
             r.halo(d, p);
         }
     }
@@ -123,6 +123,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             let b = r.breathe(&[v2(0.0, y)])[0];
             button(r, d, b, 4.6, Coat::new(0.0, 0.12, 0.0, 0.0));
         }
+    }
+    // Arms, puff sleeves and paws: on the counter, or (cheering) up at the cheeks.
+    let limbs = |d: &mut DrawList| {
         for (a, open) in &arms {
             d.backing(a);
             FUR.ink(d, a);
@@ -147,10 +150,15 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
             }
             r.seam(d, &band);
         }
-        for (c, p) in &paws {
+        for (i, (c, tilt, p)) in paws.iter().enumerate() {
+            let sx = if i == 0 { -1.0 } else { 1.0 };
             r.part(d, p, FUR);
-            toes(r, d, *c, 30.0, 25.0, 3);
+            toes_at(r, d, *c, 30.0, 25.0, 3, *tilt, r.raised(sx));
+            r.wave_marks(d, *c + v2(0.0, -25.0), sx);
         }
+    };
+    if r.body && !r.limbs_in_front() {
+        limbs(d);
     }
 
     // Ears (behind the head): tall ear, then the folded ear with its flap on top.
@@ -182,6 +190,9 @@ pub fn draw(d: &mut DrawList, r: &Rig) {
     crate::art::face::mouth(d, m, 84.0, r.expr);
 
     ribbon(r, d, fold_base + v2(4.0, -6.0));
+    if r.limbs_in_front() {
+        limbs(d);
+    }
 }
 
 /// Paper polka dots knocked out of the dress (the key plate survives).

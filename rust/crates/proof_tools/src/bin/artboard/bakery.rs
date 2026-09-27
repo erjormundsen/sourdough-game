@@ -13,6 +13,9 @@ use proof_core::ink::{Edition, Ink};
 use proof_core::scoring::template;
 use std::path::Path;
 
+/// (recipe, pattern, shape, crust, stencil, topping) for a showcase loaf.
+type Look = (Recipe, Pattern, Shape, f32, Option<Stencil>, Option<Topping>);
+
 pub fn cuts(p: Pattern, shape: Shape, bloom: f32, ear: f32) -> Vec<CutView> {
     template(p, shape).into_iter().map(|pts| CutView { pts, bloom, ear }).collect()
 }
@@ -40,7 +43,7 @@ pub fn render(out: &Path, scale: f32) {
     b.put(v2(1250.0, 190.0), |d| {
         loaf_top(d, &raw(Pattern::Cross, Shape::Boule, Some(Stencil::Star), None, 5))
     });
-    let looks: [(Recipe, Pattern, Shape, f32, Option<Stencil>, Option<Topping>); 8] = [
+    let looks: [Look; 8] = [
         (Recipe::Country, Pattern::Wheat, Shape::Boule, 0.55, None, Some(Topping::Sesame)),
         (Recipe::DarkRye, Pattern::Ear, Shape::Batard, 0.85, None, None),
         (Recipe::CranberryWalnut, Pattern::Cross, Shape::Boule, 0.2, Some(Stencil::Heart), None),

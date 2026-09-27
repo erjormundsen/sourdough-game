@@ -316,44 +316,43 @@ fn bun(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
     let mut rng = Rng::new(seed as u64 * 13 + 7);
     let c = v2(0.0, -0.09 * s);
     let (rx, ry) = (0.44 * s, 0.27 * s);
-    let side = 0.15 * s;
+    let side = 0.14 * s;
     let top = lumpy(c, rx, ry, 0.02, seed, 72);
     let body = with_side(&top, c, rx, side);
     let (dough_y, dough_p) = if baked { (0.88, 0.3) } else { (0.4, 0.06) };
+    // Where the rolled strip ends: the spiral's outer end, and its seam down the side.
+    let turns = 2.4;
+    let phase = 0.4 + rng.range(-0.3, 0.3);
+    let end_a = TAU * turns + phase;
     d.backing(&body);
     d.fill(Ink::Yellow, dough_y, &body);
-    // The side wall: browner towards the base, the rolled strip's seam, soft layer lines.
+    // The side wall: the outer strip of dough, browner towards the base, with its seam.
     d.clipped(&body, |d| {
         d.ht(Ink::Pink, dough_p + 0.3, &body);
-        d.ht(Ink::Key, if baked { 0.22 } else { 0.06 }, &body);
+        d.ht(Ink::Key, if baked { 0.2 } else { 0.05 }, &body);
         let base: Vec<V2> = top.iter().filter(|q| q.y > c.y).map(|q| *q + v2(0.0, side)).collect();
         if base.len() > 2 {
             let mut band = base.clone();
             band.sort_by(|a, b| a.x.total_cmp(&b.x));
             d.stroke_p(Paint::ht(Ink::Key, if baked { 0.35 } else { 0.1 }).add(), 0.05 * s, &band, false);
         }
-        for (x, lean) in [(-0.3f32, -0.02f32), (0.05, 0.015), (0.3, 0.03)] {
-            let x = x * s;
-            let yl = c.y + ry * (1.0 - (x / rx).powi(2)).max(0.0).sqrt();
-            let seam = quad_bezier(
-                v2(x, yl),
-                v2(x + lean * s, yl + side * 0.5),
-                v2(x + lean * s * 0.5, yl + side),
-                5,
-            );
-            d.stroke_p(
-                Paint::solid(Ink::Pink, if baked { 0.7 } else { 0.4 }).add(),
-                DETAIL * 1.6 * k,
-                &seam,
-                false,
-            );
-            d.stroke_p(
-                Paint::solid(Ink::Key, if baked { 0.45 } else { 0.25 }).add(),
-                DETAIL * 0.6 * k,
-                &seam,
-                false,
-            );
-        }
+        // The seam sits where the strip's end wraps round the front.
+        let sx = (end_a.cos() * rx * 0.95).clamp(-0.3 * s, 0.3 * s);
+        let yl = c.y + ry * (1.0 - (sx / rx).powi(2)).max(0.0).sqrt();
+        let seam =
+            quad_bezier(v2(sx, yl), v2(sx + 0.03 * s, yl + side * 0.5), v2(sx + 0.015 * s, yl + side), 6);
+        d.stroke_p(
+            Paint::solid(Ink::Pink, if baked { 0.6 } else { 0.35 }).add(),
+            DETAIL * 2.0 * k,
+            &seam,
+            false,
+        );
+        d.stroke_p(
+            Paint::solid(Ink::Key, if baked { 0.5 } else { 0.3 }).add(),
+            DETAIL * 0.7 * k,
+            &seam,
+            false,
+        );
         // Lit on the left flank.
         d.knock_p(
             0.3,
@@ -366,96 +365,133 @@ fn bun(d: &mut DrawList, s: f32, seed: u32, baked: bool) {
     d.knock(&top);
     d.fill(Ink::Yellow, dough_y, &top);
     d.ht(Ink::Pink, dough_p, &top);
-    // The spiral: coil ridges lit on their top-left, cinnamon in the grooves.
-    let turns = 2.4;
+    // The swirl: coil ridges lit on their top-left, cinnamon deep in the grooves.
     let spiral = |t: f32, off: f32| -> V2 {
-        let a = t * TAU * turns + 0.4;
+        let a = t * TAU * turns + phase;
         let r = (0.1 + 0.9 * t) * (1.0 + off);
         c + v2(a.cos() * rx * 0.95 * r, a.sin() * ry * 0.95 * r)
     };
-    let n = 150;
+    let n = 160;
     let groove: Vec<V2> = (0..=n).map(|i| spiral(i as f32 / n as f32, 0.0)).collect();
     d.clipped(&top, |d| {
         let flank: Vec<V2> = (0..=n).map(|i| spiral(i as f32 / n as f32, -0.08)).collect();
         d.stroke_p(Paint::ht(Ink::Pink, if baked { 0.8 } else { 0.35 }).add(), 0.055 * s, &flank, false);
         let ridge: Vec<V2> = (0..=n).map(|i| spiral(i as f32 / n as f32, -0.22)).collect();
         d.stroke_p(Paint::solid(Ink::Yellow, if baked { 0.55 } else { 0.25 }).add(), 0.03 * s, &ridge, false);
-        d.knock_p(0.4, Screen::Solid, PLATES_COLOR, &taper(&ridge, |t| 0.007 * s * arch(t, 0.3)));
-        // Cinnamon swirl in the groove.
+        d.knock_p(0.45, Screen::Solid, PLATES_COLOR, &taper(&ridge, |t| 0.008 * s * arch(t, 0.3)));
         d.stroke_p(Paint::solid(Ink::Key, if baked { 0.66 } else { 0.48 }).add(), 0.026 * s, &groove, false);
         d.stroke_p(Paint::solid(Ink::Pink, 0.8).add(), 0.026 * s, &groove, false);
     });
     d.outline(Ink::Key, DETAIL * 1.1 * k, &top);
 
     if baked {
-        // A thin, glossy glaze poured over the crown: translucent, so the spiral shows
-        // through; it creeps outwards in soft lobes and runs over the front rim in two drips.
-        let ic = c + v2(-0.02 * s, 0.01 * s);
-        let icing: Vec<V2> = (0..96)
+        // Glaze piped from a spoon in switchbacks across the swirl: long passes with
+        // rounded turns near the edge, a thick glossy ribbon that pools where it turns, and
+        // one drip running over the front rim.
+        let passes = 4;
+        let tilt = -0.1;
+        let level = |i: usize| (-0.62 + 1.24 * i as f32 / (passes - 1) as f32) * ry;
+        let half = |dy: f32| rx * 0.8 * (1.0 - (dy / ry).powi(2)).max(0.0).sqrt();
+        let mut pts: Vec<V2> = Vec::new();
+        let r = (level(1) - level(0)) * 0.5;
+        for i in 0..passes {
+            let dy = level(i);
+            // Each pass stops a turn's radius short of the edge, so the turn stays on top.
+            let hw = (half(dy) - r * 0.9).max(r) * rng.range(0.88, 1.0);
+            let (x0, x1) = if i % 2 == 0 { (-hw, hw) } else { (hw, -hw) };
+            for j in 0..=10 {
+                let u = j as f32 / 10.0;
+                let x = x0 + (x1 - x0) * u;
+                pts.push(v2(x, dy + (u * PI * 2.0 + i as f32).sin() * 0.01 * s));
+            }
+            if i + 1 < passes {
+                // A round turn down to the next pass.
+                let sgn = if i % 2 == 0 { 1.0 } else { -1.0 };
+                for j in 1..12 {
+                    let a = -PI * 0.5 + PI * j as f32 / 12.0;
+                    pts.push(v2(x1 + sgn * a.cos() * r, dy + r + a.sin() * r));
+                }
+            }
+        }
+        let path: Vec<V2> = crate::geom::resample(&chaikin(&pts, 2, false), 120)
+            .into_iter()
+            .map(|p| c + p.rotate(tilt))
+            .collect();
+        // Thicker where the spoon slowed down to turn.
+        let turn_at: Vec<f32> = (0..path.len())
             .map(|i| {
-                let a = TAU * i as f32 / 96.0;
-                let lobes = 0.09 * (a * 5.0 + seed as f32 * 0.8).sin() + 0.05 * (a * 9.0 + 2.1).sin();
-                let r = 1.0 + lobes;
-                ic + v2(a.cos() * 0.31 * s * r, a.sin() * 0.19 * s * r)
+                let a = path[i.saturating_sub(2)];
+                let m = path[i];
+                let b = path[(i + 2).min(path.len() - 1)];
+                let (u, v) = ((m - a).norm(), (b - m).norm());
+                (1.0 - u.dot(v)).clamp(0.0, 1.0)
             })
             .collect();
-        let icing = chaikin(&icing, 1, true);
-        let mut drips = Vec::new();
-        for (x, len, w) in [(-0.19f32, 0.08f32, 0.09f32), (0.13, 0.04, 0.072)] {
-            let x = x * s + rng.range(-0.01, 0.01) * s;
-            let y_e = c.y + ry * (1.0 - (x / rx).powi(2)).max(0.0).sqrt();
-            let top = y_e - 0.07 * s;
-            let bot = y_e + len * s;
-            let hw = w * s * 0.5;
-            drips.push(chaikin(
-                &[
-                    v2(x - hw * 1.2, top),
-                    v2(x + hw * 1.2, top),
-                    v2(x + hw * 0.8, y_e + 0.01 * s),
-                    v2(x + hw * 0.55, bot - hw * 0.8),
-                    v2(x + hw * 0.95, bot),
-                    v2(x + 0.2 * hw, bot + hw * 0.9),
-                    v2(x - hw * 0.8, bot + hw * 0.3),
-                    v2(x - hw * 0.6, bot - hw * 0.8),
-                    v2(x - hw * 0.8, y_e + 0.01 * s),
-                ],
-                3,
-                true,
-            ));
-        }
-        let all: Vec<&Vec<V2>> = std::iter::once(&icing).chain(drips.iter()).collect();
-        for p in &all {
-            let shadow: Vec<V2> = p.iter().map(|q| *q + v2(0.006, 0.012) * s).collect();
-            d.fill_p(Paint::ht(Ink::Key, 0.35).add(), &shadow);
+        let np = path.len();
+        let pool = |t: f32| {
+            let i = ((t * (np - 1) as f32).round() as usize).min(np - 1);
+            1.0 + 0.9 * turn_at[i].sqrt()
+        };
+        let w = 0.024 * s;
+        let ribbon = taper(&path, |t| w * pool(t) * (0.55 + 0.45 * arch(t, 0.25)));
+        // The drip: from the lowest swing near the front, over the rim and down the side.
+        let lowest =
+            path.iter().filter(|p| p.x.abs() < rx * 0.4).fold(path[0], |a, p| if p.y > a.y { *p } else { a });
+        let rim = c.y + ry * (1.0 - (lowest.x / rx).powi(2)).max(0.0).sqrt();
+        let len = side * rng.range(0.55, 0.8);
+        let hw = w * 1.15;
+        let drip = chaikin(
+            &[
+                lowest + v2(-hw * 1.2, -w),
+                lowest + v2(hw * 1.2, -w),
+                v2(lowest.x + hw, rim),
+                v2(lowest.x + hw * 0.8, rim + len * 0.7),
+                v2(lowest.x + hw * 0.9, rim + len),
+                v2(lowest.x, rim + len + hw * 0.9),
+                v2(lowest.x - hw * 0.9, rim + len),
+                v2(lowest.x - hw * 0.8, rim + len * 0.7),
+                v2(lowest.x - hw, rim),
+            ],
+            3,
+            true,
+        );
+        let cap0 = circle(path[0], w * pool(0.0) * 0.55);
+        let cap1 = circle(path[path.len() - 1], w * pool(1.0) * 0.55);
+        let parts = [&ribbon, &drip, &cap0, &cap1];
+        for p in parts {
+            let shadow: Vec<V2> = p.iter().map(|q| *q + v2(0.007, 0.013) * s).collect();
+            d.fill_p(Paint::ht(Ink::Key, 0.45).add(), &shadow);
         }
         // Outlines first, then the glaze over them: one seamless pour.
-        for p in &all {
-            d.stroke_p(Paint::solid(Ink::Key, 0.8), DETAIL * 1.7 * k, p, true);
+        for p in parts {
+            d.stroke_p(Paint::solid(Ink::Key, 0.75), DETAIL * 1.6 * k, p, true);
         }
-        for p in &all {
-            d.knock_p(1.0, Screen::Solid, 1 << Ink::Key.idx(), p);
-            d.knock_p(0.74, Screen::Solid, PLATES_COLOR, p);
+        for p in parts {
+            d.knock(p);
+            d.fill_p(Paint::solid(Ink::Yellow, 0.1).add(), p);
+            d.fill_p(Paint::solid(Ink::Blue, 0.05).add(), p);
         }
-        // Gloss: a bright rim of light along the upper-left edge, cool shade lower-right.
-        d.clipped(&icing, |d| {
-            let lit: Vec<V2> = icing.iter().map(|q| *q + v2(0.012, 0.018) * s).collect();
-            d.knock_p(1.0, Screen::Solid, PLATES_ALL, &{
-                let mut eo = icing.clone();
-                eo.extend(lit.iter().rev().cloned());
-                eo
-            });
-            let shade: Vec<V2> = icing.iter().map(|q| *q + v2(-0.012, -0.02) * s).collect();
-            d.fill_eo(Paint::ht(Ink::Blue, 0.3).add(), &[icing.clone(), shade]);
-        });
-        for dp in &drips {
-            d.clipped(dp, |d| {
-                let shade: Vec<V2> = dp.iter().map(|q| *q + v2(-0.01, -0.004) * s).collect();
-                d.fill_eo(Paint::ht(Ink::Blue, 0.3).add(), &[dp.clone(), shade]);
-            });
-            let bulb = dp.iter().fold(v2(0.0, f32::MIN), |a, q| if q.y > a.y { *q } else { a });
-            d.knock(&circle(bulb + v2(-0.008 * s, -0.018 * s), 0.008 * s));
+        // Gloss: a bright streak along the ribbon's upper edge, cool shade underneath.
+        let n = path.len();
+        let nrm: Vec<V2> = (0..n)
+            .map(|i| {
+                let a = path[i.saturating_sub(1)];
+                let b = path[(i + 1).min(n - 1)];
+                let q = (b - a).norm().perp();
+                if q.y > 0.0 { -q } else { q }
+            })
+            .collect();
+        let under: Vec<V2> =
+            (0..n).map(|i| path[i] - nrm[i] * (w * pool(i as f32 / (n - 1) as f32) * 0.45)).collect();
+        d.fill_p(Paint::ht(Ink::Blue, 0.32).add(), &taper(&under, |t| w * 0.4 * pool(t) * arch(t, 0.3)));
+        let over: Vec<V2> =
+            (0..n).map(|i| path[i] + nrm[i] * (w * pool(i as f32 / (n - 1) as f32) * 0.3)).collect();
+        for seg in over.chunks(9).step_by(2) {
+            if seg.len() >= 3 {
+                d.knock(&taper(seg, |t| w * 0.22 * arch(t, 0.8)));
+            }
         }
-        d.knock(&ellipse(ic + v2(-0.12 * s, -0.08 * s), 0.05 * s, 0.016 * s, -0.25));
+        d.knock(&ellipse(v2(lowest.x - hw * 0.3, rim + len * 0.75), hw * 0.28, hw * 0.45, 0.0));
     }
     d.outline(Ink::Key, OUTER * 0.85 * k, &body);
 }

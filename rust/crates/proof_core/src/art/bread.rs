@@ -21,6 +21,8 @@ use crate::draw::{Cmd, DrawList, Op, PLATES_ALL, PLATES_COLOR, Paint, Screen};
 
 /// Pink + yellow plates.
 const PY: u8 = 0b0011;
+/// Pink + key plates (lifting these leaves a golden highlight).
+const PK: u8 = 0b1001;
 /// Pink + yellow + key plates (everything a crust prints with).
 const PYK: u8 = 0b1011;
 use crate::geom::{
@@ -1012,9 +1014,9 @@ fn cuts(d: &mut DrawList, l: &Loaf) {
         };
         // Brightest just behind the lip, easing back into the crust at the hinge.
         let outer: Vec<Vec<V2>> = eared.iter().map(|bl| band(bl, 0.08, 1.0)).collect();
-        knock_many(d, 0.1 + 0.16 * ear, Screen::Solid, PY, &outer);
+        knock_many(d, 0.12 + 0.2 * ear, Screen::Solid, PK, &outer);
         let inner: Vec<Vec<V2>> = eared.iter().map(|bl| band(bl, 0.1, 0.5)).collect();
-        knock_many(d, 0.12 + 0.3 * ear, Screen::Solid, PY, &inner);
+        knock_many(d, 0.15 + 0.35 * ear, Screen::Solid, PK, &inner);
     }
     // 2. Edges of the baked openings, just outside them: a fine torn far edge and the
     //    ear's crisp dark lip, which catches a glint of light along its crest.
@@ -1103,32 +1105,33 @@ fn cuts(d: &mut DrawList, l: &Loaf) {
 fn fibres(d: &mut DrawList, l: &Loaf, bl: &Bloom) {
     let n = bl.path.len();
     let mut rng = Rng::new((bl.len * 1000.0) as u64 ^ l.v.seed as u64);
-    let count = ((bl.len * 30.0) * l.lod * bl.open) as usize;
-    let w = l.lw(1.5);
+    let count = ((bl.len * 26.0) * l.lod * bl.open) as usize;
+    let w = l.lw(1.3);
+    // Gluten stretched across the tear: pale strands leaning the same way, fanning a little,
+    // with a soft shadow on their far side.
+    let lean_dir = if hash01(l.v.seed, n as u32) < 0.5 { -1.0 } else { 1.0 };
     let mut light = Vec::new();
-    let mut dark = Vec::new();
-    for k in 0..count {
-        let i = (rng.range(0.1, 0.9) * (n - 1) as f32) as usize;
+    let mut shade = Vec::new();
+    for _ in 0..count {
+        let i = (rng.range(0.12, 0.88) * (n - 1) as f32) as usize;
         let span = bl.we[i] + bl.wf[i];
         if span < 0.025 {
             continue;
         }
-        let f0 = rng.range(0.15, 0.4);
-        let f1 = rng.range(0.6, 0.92);
+        let f0 = rng.range(0.18, 0.35);
+        let f1 = rng.range(0.62, 0.86);
         let at = |f: f32| bl.path[i] + bl.nrm[i] * (bl.we[i] - span * f);
         let tan = (bl.path[(i + 1).min(n - 1)] - bl.path[i.saturating_sub(1)]).norm();
-        let lean = tan * (span * rng.range(-0.25, 0.25));
-        let pts = vec![at(f0), at((f0 + f1) * 0.5) + lean * 0.5, at(f1) + lean];
-        let poly = taper(&pts, |t| w * (0.25 + 0.75 * arch(t, 0.8)));
-        if k % 3 == 0 {
-            dark.push(poly);
-        } else {
-            light.push(poly);
-        }
+        let lean = tan * (span * lean_dir * rng.range(0.1, 0.3));
+        let pts = vec![at(f0), at((f0 + f1) * 0.5) + lean * 0.4, at(f1) + lean];
+        let tw = w * rng.range(0.7, 1.2);
+        shade.push(taper(&pts.iter().map(|p| *p + tan * (tw * 1.1 * lean_dir)).collect::<Vec<V2>>(), |t| {
+            tw * 0.6 * arch(t, 0.8)
+        }));
+        light.push(taper(&pts, |t| tw * (0.2 + 0.8 * arch(t, 0.8))));
     }
-    knock_many(d, 0.55, Screen::Solid, PY, &light);
-    fill_many(d, Paint::solid(Ink::Pink, 0.45).add(), &dark);
-    fill_many(d, Paint::solid(Ink::Key, 0.16).add(), &dark);
+    fill_many(d, Paint::solid(Ink::Pink, 0.22).add(), &shade);
+    knock_many(d, 0.5, Screen::Solid, PY, &light);
     // Tiny pores in the torn face.
     let mut pores = Vec::new();
     for _ in 0..(count / 2) {
@@ -1138,8 +1141,8 @@ fn fibres(d: &mut DrawList, l: &Loaf, bl: &Bloom) {
         let s = (1.2 / l.k).max(0.004) * rng.range(0.8, 1.6);
         pores.push(speck(p, s * 1.4, s, rng.range(0.0, PI), 8));
     }
-    fill_many(d, Paint::solid(Ink::Pink, 0.45).add(), &pores);
-    fill_many(d, Paint::solid(Ink::Key, 0.25).add(), &pores);
+    fill_many(d, Paint::solid(Ink::Pink, 0.4).add(), &pores);
+    fill_many(d, Paint::solid(Ink::Key, 0.2).add(), &pores);
 }
 
 /// Inclusions exposed inside the blooms.

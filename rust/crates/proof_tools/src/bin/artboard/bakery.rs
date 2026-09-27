@@ -54,67 +54,62 @@ fn look_view(l: &Look, r: f32, bake: f32, bloom: f32, seed: u32) -> LoafView {
 }
 
 pub fn render(out: &Path, scale: f32) {
-    if std::env::var("BAKERY_DBG").is_ok() {
-        let sc: f32 = std::env::var("BAKERY_DBG").ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
-        let mut b = Board::new(420.0, 420.0, sc, Edition::Dawn);
-        b.put(v2(210.0, 400.0), |d| {
-            let v = OvenView { glow: 0.9, steam: 1.0, t: 0.3, expr: Expr::Happy, ..OvenView::default() };
-            oven(d, &v, |d| {
-                let looks: [Look; 2] = [
-                    (Recipe::Country, Some(Pattern::Ear), Shape::Boule, 0.5, Some(Stencil::Heart), None),
-                    (Recipe::Country, Some(Pattern::Cross), Shape::Boule, 0.5, None, Some(Topping::Sesame)),
-                ];
-                for (i, x) in [-46.0f32, 46.0].iter().enumerate() {
-                    if std::env::var("NO_LOAVES").is_ok() {
-                        continue;
-                    }
-                    let mut lv = look_view(&looks[i], 40.0, 0.5, 0.4, 7);
-                    lv.spring = 0.5;
-                    d.with(Xf::at(v2(*x, -150.0)), |d| loaf_top(d, &lv));
-                }
-            })
-        });
-        b.save(&out.join("dbg_oven.png"));
-        {
-            use proof_raster::{RasterConfig, rasterize};
-            let mut full = DrawList::new();
-            let v = OvenView { glow: 0.9, steam: 1.0, t: 0.3, expr: Expr::Happy, ..OvenView::default() };
-            oven(&mut full, &v, |_| {});
-            let cfg = RasterConfig { scale: sc, ..RasterConfig::default() };
-            let bounds = full.bounds();
-            let probe = v2(110.0, -140.0);
-            let mut prev = [0u8; 5];
-            for k in 1..=full.cmds.len() {
-                let mut p = DrawList::new();
-                p.cmds = full.cmds[..k].to_vec();
-                let pl = rasterize(&p, &cfg, bounds);
-                let px = ((probe.x - pl.origin.x) * pl.scale) as u32;
-                let py = ((probe.y - pl.origin.y) * pl.scale) as u32;
-                let i = (py * pl.width + px) as usize;
-                let bk = pl.backing.as_ref().map(|b| b[i]).unwrap_or(0);
-                let cur = [pl.rgba[i * 4], pl.rgba[i * 4 + 1], pl.rgba[i * 4 + 2], pl.rgba[i * 4 + 3], bk];
-                if cur != prev {
-                    println!(
-                        "#{:3} {:?} -> plates {:?} backing {}",
-                        k - 1,
-                        full.cmds[k - 1].op,
-                        &cur[..4],
-                        cur[4]
-                    );
-                    prev = cur;
-                }
-            }
-        }
-        return;
-    }
     if std::env::var("BAKERY_BENCH").is_ok() {
         bench();
         return;
     }
+    hero(out, scale);
     loaves(out, scale);
     states(out, scale);
     jars(out, scale);
     oven_and_treats(out, scale);
+}
+
+/// The bakery at the sizes the player sees up close: dough on the board and the loaf it
+/// becomes (r=165), a starter at 1x, Toasty baking at 1.25x, and a treat tray.
+fn hero(out: &Path, scale: f32) {
+    let mut b = Board::new(1600.0, 1160.0, scale * 0.6, Edition::Dawn);
+    let dough: Look =
+        (Recipe::Country, Some(Pattern::Ear), Shape::Boule, 0.6, Some(Stencil::Heart), Some(Topping::Sesame));
+    b.put(v2(195.0, 205.0), |d| loaf_top(d, &look_view(&dough, 165.0, 0.0, 0.0, 12)));
+    b.put(v2(575.0, 205.0), |d| loaf_top(d, &look_view(&dough, 165.0, 1.0, 1.0, 12)));
+    let rye: Look = (Recipe::DarkRye, Some(Pattern::Wheat), Shape::Batard, 0.7, None, Some(Topping::Oats));
+    b.put(v2(1035.0, 215.0), |d| loaf_top(d, &look_view(&rye, 140.0, 1.0, 0.9, 5)));
+    b.put(v2(1420.0, 250.0), |d| crumb_slice(d, 300.0, 195.0, 0.85, 0.65, 9));
+    b.put(v2(190.0, 1060.0), |d| {
+        let v = JarView {
+            pep: 0.95,
+            tang: 0.45,
+            rise: 0.9,
+            band: 0.28,
+            expr: Expr::Excited,
+            seed: 3,
+            ..JarView::default()
+        };
+        d.with(Xf::IDENTITY.scaled(1.2), |d| jar(d, &v))
+    });
+    b.put(v2(650.0, 1090.0), |d| {
+        d.with(Xf::IDENTITY.scaled(1.25), |d| {
+            let v = OvenView { glow: 0.9, steam: 1.0, t: 0.35, expr: Expr::Happy, ..OvenView::default() };
+            oven(d, &v, |d| {
+                for (i, x) in [-46.0f32, 46.0].iter().enumerate() {
+                    let l: Look = if i == 0 {
+                        dough
+                    } else {
+                        (Recipe::Country, Some(Pattern::Cross), Shape::Boule, 0.6, None, None)
+                    };
+                    let mut lv = look_view(&l, 40.0, 0.7, 0.6, 12);
+                    lv.spring = 0.7;
+                    d.with(Xf::at(v2(*x, -150.0)), |d| loaf_top(d, &lv));
+                }
+            })
+        })
+    });
+    let spots = [v2(1110.0, 720.0), v2(1380.0, 720.0), v2(1245.0, 960.0)];
+    for (i, t) in Treat::ALL.iter().enumerate() {
+        b.put(spots[i], |d| treat(d, *t, 190.0, 7 + i as u32));
+    }
+    b.save(&out.join("bakery_hero.png"));
 }
 
 /// Raw doughs, then a showcase of finished loaves at hero size.

@@ -7,3 +7,5 @@ godot/bin/
 .tools/
 out/
 build/
+# Agent worktrees (local only)
+.claude/worktrees/

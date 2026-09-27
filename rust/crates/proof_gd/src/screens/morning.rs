@@ -1,9 +1,14 @@
 //! Morning: wake-up peek → dress & score each dough → Toasty's oven → the reveal → treats.
+//!
+//! Composition (see `scenes::bake_layout`): the Bakehouse wall up top with the starter jars
+//! on their shelf; below, the marble bench where the dough rests on a floured board, the
+//! waiting bannetons sit on a linen couche, and the Dress / Score tools live in two trays.
+//! The action bar sits on the bench's wooden apron.
 
 use super::{Ctx, Ptr, Screen, new_root};
 use crate::riso::{Art, TextSpec, list, list_at, vec2};
 use crate::sfx::Sfx;
-use crate::ui::{Button, Floater, Hud, Panel};
+use crate::ui::{self, Button, Floater, Hud, Panel};
 use godot::classes::line_2d::{LineCapMode, LineJointMode};
 use godot::classes::{Label, Line2D, Node, Node2D};
 use godot::prelude::*;
@@ -11,13 +16,16 @@ use proof_core::anim::{Spring, ease_out_back, ease_out_cubic, ease_out_elastic};
 use proof_core::art::bread::{LoafView, crumb_slice, loaf_top};
 use proof_core::art::icons::Icon;
 use proof_core::art::jar::jar;
-use proof_core::art::oven::{OvenView, oven};
-use proof_core::art::scenes::{Backdrop, backdrop, counter_front, counter_top};
+use proof_core::art::oven::{OvenView, WINDOW, oven};
+use proof_core::art::scenes::{
+    self, Backdrop, BakeLayout, Dressing, backdrop_dressed, counter_front, jar_scale, jar_shelf, jar_slots,
+};
 use proof_core::art::treats::{treat, treat_raw};
 use proof_core::art::{Expr, props};
 use proof_core::bake::Loaf;
 use proof_core::content::{Pattern, Shape, Stencil, Topping, Treat};
 use proof_core::customer::Want;
+use proof_core::draw::DrawList;
 use proof_core::geom::{V2, Xf, polyline_len, rect, resample, v2};
 use proof_core::ink::Ink;
 use proof_core::scoring::template;
@@ -25,6 +33,10 @@ use proof_core::state::{Event, TRAY_COST};
 
 const R: f32 = 165.0;
 const OVEN_SECS: f32 = 6.5;
+/// Toasty is drawn a little larger than life on the bench.
+const OVEN_SCALE: f32 = 1.15;
+/// Round tool buttons in the trays.
+const TOOL_R: f32 = 32.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Tool {
@@ -62,12 +74,14 @@ pub struct Morning {
     _bg: Art,
     _front: Art,
     jars: Vec<Art>,
+    jar_scale: f32,
     step: Step,
     sel: Option<u32>,
     cuts: Vec<Vec<V2>>,
     stencil: Option<Stencil>,
     topping: Option<Topping>,
     guide: Option<Pattern>,
+    board: Art,
     dough: Art,
     dough_bounce: Spring,
     guide_art: Art,
@@ -77,50 +91,76 @@ pub struct Morning {
     cutting: bool,
     tools: Panel<Tool>,
     btns: Panel<Btn>,
+    trays: Vec<Art>,
     bannetons: Vec<(u32, Art)>,
+    couche: Option<Art>,
     ready: Vec<u32>,
     oven: Art,
     meter: Art,
     oven_q: i32,
     reveal: Vec<Art>,
+    stamps: Vec<Art>,
     reveal_labels: Vec<Gd<Label>>,
-    prompt: Gd<Label>,
     tray: Vec<Art>,
+    tray_props: Vec<Art>,
     work_labels: Vec<Gd<Label>>,
     oven_shot: bool,
+    reveal_shot: bool,
+    done_shot: bool,
     floaters: Vec<Floater>,
-    counter_y: f32,
+    /// The bench layout, already offset by the safe-area inset.
+    lay: BakeLayout,
     dough_c: V2,
+    bar: f32,
 }
 
-fn dough_center(h: f32) -> V2 {
-    v2(360.0, 600.0 + (h - 1280.0) * 0.3)
+/// The bake layout for this screen, in screen coordinates.
+fn stage(ctx: &Ctx) -> BakeLayout {
+    let top = ctx.lay.top;
+    let hh = ctx.lay.h - top - ctx.lay.bottom;
+    let mut l = scenes::bake_layout(hh);
+    let off = v2(0.0, top);
+    l.dough += off;
+    l.trays = [l.trays[0] + top, l.trays[1] + top];
+    l.bannetons += top;
+    l.oven += off;
+    l.gauge += off;
+    l.bar += top;
+    l
 }
 
 impl Morning {
     pub fn new(ctx: &mut Ctx, host: &mut Gd<Node2D>) -> Morning {
         let root = new_root(host);
         let mut rn: Gd<Node> = root.clone().upcast();
-        let h = ctx.lay.h;
-        let bg = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| backdrop(d, Backdrop::Bakehouse, h)));
-        // Starter jars sit on the shelf for the wake-up peek.
+        let top = ctx.lay.top;
+        let hh = ctx.lay.h - top - ctx.lay.bottom;
+        let lay = stage(ctx);
+        let slots = jar_slots(Backdrop::Bakehouse, ctx.state.starters.len());
+        let dress = Dressing { jars: slots.clone() };
+        let bg = ctx.riso.art(
+            &mut rn,
+            v2(0.0, top),
+            &list(|d| backdrop_dressed(d, Backdrop::Bakehouse, hh, &dress)),
+        );
+        // Starter jars stand on the shelf for the wake-up peek.
+        let js = top + jar_shelf(Backdrop::Bakehouse, hh) - 4.0;
+        let jscale = jar_scale(Backdrop::Bakehouse);
         let mut jars = Vec::new();
         for (i, s) in ctx.state.starters.iter().enumerate() {
             let mut view = s.view(0.0);
             view.rise = view.band;
-            let a = ctx.riso.art(
-                &mut rn,
-                v2(62.0 + i as f32 * 80.0, 304.0),
-                &list_at(Xf::IDENTITY.scaled(0.42), |d| jar(d, &view)),
-            );
+            let x = slots.get(i).copied().unwrap_or(56.0 + i as f32 * 74.0);
+            let a =
+                ctx.riso.art(&mut rn, v2(x, js), &list_at(Xf::IDENTITY.scaled(jscale), |d| jar(d, &view)));
             jars.push(a);
         }
-        let counter_y = counter_top(Backdrop::Bakehouse, h);
-        let dough = ctx.riso.art(&mut rn, dough_center(h), &DrawList::new());
-        let guide_art = ctx.riso.art(&mut rn, dough_center(h), &DrawList::new());
-        let oven = ctx.riso.art(&mut rn, v2(360.0, counter_y + 8.0), &DrawList::new());
-        let meter = ctx.riso.art(&mut rn, v2(360.0, counter_y - 510.0), &DrawList::new());
-        let front = ctx.riso.art(&mut rn, V2::ZERO, &list(|d| counter_front(d, Backdrop::Bakehouse, h)));
+        let board = ctx.riso.art(&mut rn, lay.dough, &list(|d| props::bread_board(d, lay.board_r)));
+        let dough = ctx.riso.art(&mut rn, lay.dough, &DrawList::new());
+        let guide_art = ctx.riso.art(&mut rn, lay.dough, &DrawList::new());
+        let oven = ctx.riso.art(&mut rn, lay.oven, &DrawList::new());
+        let meter = ctx.riso.art(&mut rn, lay.gauge, &DrawList::new());
+        let front = ctx.riso.art(&mut rn, v2(0.0, top), &list(|d| counter_front(d, Backdrop::Bakehouse, hh)));
         let mut line = Line2D::new_alloc();
         line.set_width(5.0);
         line.set_default_color(ctx.riso.ink(Ink::Key));
@@ -129,8 +169,8 @@ impl Morning {
         line.set_end_cap_mode(LineCapMode::ROUND);
         line.set_material(&ctx.riso.text_mat);
         rn.add_child(&line);
-        let prompt = ctx.riso.text(&mut rn, &TextSpec::new("", rect(40.0, 318.0, 640.0, 60.0), 30.0).bold());
         let hud = Hud::new(ctx, &mut rn, "Dawn edition · bake");
+        let bar = ui::bar_y(ctx);
         let mut m = Morning {
             root,
             rn,
@@ -138,12 +178,14 @@ impl Morning {
             _bg: bg,
             _front: front,
             jars,
+            jar_scale: jscale,
             step: Step::Peek(0.0),
             sel: None,
             cuts: Vec::new(),
             stencil: None,
             topping: None,
             guide: None,
+            board,
             dough,
             dough_bounce: Spring::new(1.0),
             guide_art,
@@ -153,28 +195,34 @@ impl Morning {
             cutting: false,
             tools: Panel::default(),
             btns: Panel::default(),
+            trays: Vec::new(),
             bannetons: Vec::new(),
+            couche: None,
             ready: Vec::new(),
             oven,
             meter,
             oven_q: -1,
             reveal: Vec::new(),
+            stamps: Vec::new(),
             reveal_labels: Vec::new(),
-            prompt,
             tray: Vec::new(),
+            tray_props: Vec::new(),
             work_labels: Vec::new(),
             oven_shot: false,
+            reveal_shot: false,
+            done_shot: false,
             floaters: Vec::new(),
-            counter_y,
-            dough_c: dough_center(h),
+            dough_c: lay.dough,
+            lay,
+            bar,
         };
-        m.set_prompt("Good morning! The jars woke up bubbly.");
+        m.set_prompt(ctx, "Good morning! The jars woke up bubbly.");
         ctx.sfx(Sfx::Bubble);
         m
     }
 
-    fn set_prompt(&mut self, t: &str) {
-        self.prompt.set_text(t);
+    fn set_prompt(&mut self, ctx: &mut Ctx, t: &str) {
+        self.hud.say(ctx.riso, t);
     }
 
     fn dough_shape(&self, ctx: &Ctx) -> Shape {
@@ -188,6 +236,7 @@ impl Morning {
         self.clear_reveal();
         self.oven.set_visible(false);
         self.meter.set_visible(false);
+        self.board.set_visible(true);
         self.dough.set_visible(true);
         self.guide_art.set_visible(true);
         let remaining: Vec<u32> =
@@ -212,60 +261,75 @@ impl Morning {
         self.dough_bounce.pos = 0.6;
         self.build_work_ui(ctx);
         self.redraw_dough(ctx);
-        self.set_prompt("Dress it, then swipe to score!");
+        self.set_prompt(ctx, "Dress it, then swipe to score!");
         ctx.note(
             "score",
             "Swipe across the dough with your blade to score it. One bold slash makes a big ear. Try a pattern if you like!",
         );
     }
 
-    fn build_work_ui(&mut self, ctx: &mut Ctx) {
+    fn clear_trays(&mut self) {
         self.tools.clear();
-        self.btns.clear();
-        let y1 = self.dough_c.y + R + 72.0;
-        let y2 = y1 + 80.0;
-        let mut x = 150.0;
-        let add = |m: &mut Morning, ctx: &mut Ctx, tool: Tool, ic: Icon, y: f32, x: &mut f32| {
-            let b = Button::round(ctx, &mut m.rn, v2(*x, y), 31.0, Ink::Yellow, ic);
-            m.tools.add(tool, b);
-            *x += 70.0;
-        };
-        add(self, ctx, Tool::Stencil(None), Icon::None, y1, &mut x);
-        for s in ctx.state.unlocked_stencils() {
-            add(self, ctx, Tool::Stencil(Some(s)), Icon::Stencil(s), y1, &mut x);
+        for a in self.trays.drain(..) {
+            a.free();
         }
-        for t in ctx.state.unlocked_toppings() {
-            add(self, ctx, Tool::Topping(Some(t)), Icon::Topping(t), y1, &mut x);
-        }
-        let mut x = 150.0;
-        add(self, ctx, Tool::Guide(None), Icon::Freehand, y2, &mut x);
-        for p in ctx.state.unlocked_patterns() {
-            add(self, ctx, Tool::Guide(Some(p)), Icon::Pattern(p), y2, &mut x);
-        }
-        let mut rn = self.rn.clone();
         for mut l in self.work_labels.drain(..) {
             l.queue_free();
         }
-        self.work_labels.push(
-            ctx.riso.text(
-                &mut rn,
-                &TextSpec::new("Dress", rect(10.0, y1 - 22.0, 104.0, 44.0), 24.0).bold().right(),
-            ),
+    }
+
+    fn build_work_ui(&mut self, ctx: &mut Ctx) {
+        self.clear_trays();
+        self.btns.clear();
+        let mut dress: Vec<(Tool, Icon)> = vec![(Tool::Stencil(None), Icon::None)];
+        dress.extend(
+            ctx.state.unlocked_stencils().into_iter().map(|s| (Tool::Stencil(Some(s)), Icon::Stencil(s))),
         );
-        self.work_labels.push(
-            ctx.riso.text(
-                &mut rn,
-                &TextSpec::new("Score", rect(10.0, y2 - 22.0, 104.0, 44.0), 24.0).bold().right(),
-            ),
+        dress.extend(
+            ctx.state.unlocked_toppings().into_iter().map(|t| (Tool::Topping(Some(t)), Icon::Topping(t))),
         );
-        let undo =
-            Button::round(ctx, &mut rn, v2(640.0, self.dough_c.y - 120.0), 34.0, Ink::Blue, Icon::Undo);
-        self.btns.add(Btn::Undo, undo);
-        let h = ctx.lay.h;
-        let to = Button::pill(ctx, &mut rn, rect(190.0, h - 104.0, 340.0, 80.0), "Into the oven!", Ink::Pink);
+        let mut score: Vec<(Tool, Icon)> = vec![(Tool::Guide(None), Icon::Freehand)];
+        score.extend(
+            ctx.state.unlocked_patterns().into_iter().map(|p| (Tool::Guide(Some(p)), Icon::Pattern(p))),
+        );
+        let mut rn = self.rn.clone();
+        let tw = props::tray_layout(dress.len(), TOOL_R, 0)
+            .0
+            .max(props::tray_layout(score.len() + 1, TOOL_R, 1).0);
+        for (row, (name, items)) in [("Dress", dress), ("Score", score)].into_iter().enumerate() {
+            let undo = row == 1;
+            let n = items.len() + usize::from(undo);
+            let (_, slots) = props::tray_layout(n, TOOL_R, usize::from(undo));
+            let c = v2(360.0, self.lay.trays[row]);
+            let tab_w = 104.0;
+            let art = list(|d| {
+                d.with(Xf::at(v2(-tw * 0.5 + 14.0, -44.0)), |d| props::tab(d, tab_w, 30.0, Ink::Pink));
+                props::tray(d, tw, 88.0, &slots, TOOL_R);
+            });
+            self.trays.push(ctx.riso.art(&mut rn, c, &art));
+            self.work_labels.push(
+                ctx.riso.text(
+                    &mut rn,
+                    &TextSpec::new(name, rect(c.x - tw * 0.5 + 14.0, c.y - 77.0, tab_w, 30.0), 20.0)
+                        .bold()
+                        .plain(),
+                ),
+            );
+            for (i, (tool, ic)) in items.into_iter().enumerate() {
+                let b = Button::round(ctx, &mut rn, c + slots[i], TOOL_R, Ink::Yellow, ic);
+                self.tools.add(tool, b);
+            }
+            if undo {
+                let b = Button::round(ctx, &mut rn, c + slots[n - 1], TOOL_R, Ink::Blue, Icon::Undo);
+                self.btns.add(Btn::Undo, b);
+            }
+        }
+        let with_now = !self.ready.is_empty();
+        let (sec, pri) = ui::bar_rects(self.bar, with_now);
+        let to = Button::pill(ctx, &mut rn, pri, "Into the oven!", Ink::Pink);
         self.btns.add(Btn::ToOven, to);
-        if !self.ready.is_empty() {
-            let now = Button::pill(ctx, &mut rn, rect(540.0, h - 96.0, 160.0, 64.0), "Bake 1", Ink::Yellow);
+        if with_now {
+            let now = Button::pill(ctx, &mut rn, sec, "Bake 1 now", Ink::Yellow);
             self.btns.add(Btn::BakeNow, now);
         }
         self.sync_tools(ctx);
@@ -286,23 +350,42 @@ impl Morning {
         }
     }
 
-    fn build_bannetons(&mut self, ctx: &mut Ctx) {
+    fn clear_bannetons(&mut self) {
         for (_, a) in self.bannetons.drain(..) {
             a.free();
         }
-        let y = self.counter_y + 88.0;
+        if let Some(c) = self.couche.take() {
+            c.free();
+        }
+    }
+
+    fn build_bannetons(&mut self, ctx: &mut Ctx) {
+        self.clear_bannetons();
+        let top = ctx.lay.top;
+        let hh = ctx.lay.h - top - ctx.lay.bottom;
+        let n = ctx.state.fridge.len();
+        let (slots, r) = scenes::banneton_slots(hh, n);
+        let slots: Vec<V2> = slots.into_iter().map(|p| p + v2(0.0, top)).collect();
         let mut rn = self.rn.clone();
+        if let (Some(first), Some(last)) = (slots.first(), slots.last()) {
+            let cx = slots.iter().map(|p| p.x).sum::<f32>() / slots.len() as f32;
+            let w = if n > 3 { 160.0 } else { 100.0 };
+            let hgt = last.y - first.y + r * 2.0 + 44.0;
+            let c = v2(cx, (first.y + last.y) * 0.5);
+            self.couche = Some(ctx.riso.art(&mut rn, c, &list(|d| props::couche(d, w, hgt))));
+        }
         for (i, d) in ctx.state.fridge.iter().enumerate() {
             let full = Some(d.id) != self.sel;
             let ready = self.ready.contains(&d.id);
             let shape = d.shape;
             let art = list(|dl| {
-                props::banneton(dl, shape, 44.0, full);
+                props::banneton(dl, shape, r, full);
                 if ready {
-                    proof_core::art::twinkle(dl, v2(40.0, -34.0), 12.0, Ink::Yellow);
+                    proof_core::art::twinkle(dl, v2(r * 0.9, -r * 0.8), 11.0, Ink::Yellow);
                 }
             });
-            let a = ctx.riso.art(&mut rn, v2(80.0 + i as f32 * 104.0, y), &art);
+            let p = slots.get(i).copied().unwrap_or(v2(84.0, self.dough_c.y));
+            let a = ctx.riso.art(&mut rn, p, &art);
             self.bannetons.push((d.id, a));
         }
     }
@@ -393,31 +476,23 @@ impl Morning {
 
     // --- Oven step -----------------------------------------------------------------------
 
-    fn clear_work(&mut self) {
-        self.tools.clear();
-        for mut l in self.work_labels.drain(..) {
-            l.queue_free();
-        }
-    }
-
     fn enter_oven(&mut self, ctx: &mut Ctx, ids: Vec<u32>) {
-        self.clear_work();
+        self.clear_trays();
         self.btns.clear();
-        for (_, a) in self.bannetons.drain(..) {
-            a.free();
-        }
+        self.clear_bannetons();
+        self.board.set_visible(false);
         self.dough.set_visible(false);
         self.guide_art.set_visible(false);
         self.oven.set_visible(true);
         self.meter.set_visible(true);
-        self.oven.set_scale(1.25);
+        self.oven.set_scale(OVEN_SCALE);
         self.oven_q = -1;
         let mut rn = self.rn.clone();
-        let h = ctx.lay.h;
-        let pull = Button::pill(ctx, &mut rn, rect(210.0, h - 104.0, 300.0, 80.0), "Pull!", Ink::Pink);
+        let (_, pri) = ui::bar_rects(self.bar, false);
+        let pull = Button::pill(ctx, &mut rn, pri, "Pull!", Ink::Pink);
         self.btns.add(Btn::Pull, pull);
         self.step = Step::Oven { ids, t: 0.0, pulled: false };
-        self.set_prompt("Pull when the crust looks just right");
+        self.set_prompt(ctx, "Pull when the crust looks just right");
         ctx.sfx(Sfx::Whoosh);
         ctx.note("oven", "Blonde, golden or bold — every crust is lovely. Some customers have favourites!");
     }
@@ -437,12 +512,14 @@ impl Morning {
             steam: (t * 3.0).min(1.0),
             t: crust * 6.0,
         };
+        let wc = WINDOW.center();
         let d = list(|dl| {
             oven(dl, &view, |dl| {
                 let n = doughs.len().max(1) as f32;
+                let r = (WINDOW.h * 0.36).min(WINDOW.w / (2.2 * n));
                 for (i, dough) in doughs.iter().enumerate() {
-                    let x = (i as f32 - (n - 1.0) * 0.5) * 92.0;
-                    let mut v = dough.view(40.0);
+                    let x = wc.x + (i as f32 - (n - 1.0) * 0.5) * (WINDOW.w / n).min(r * 2.3);
+                    let mut v = dough.view(r);
                     v.bake = crust.min(1.0);
                     v.crust = crust;
                     v.spring = crust;
@@ -450,35 +527,12 @@ impl Morning {
                         c.bloom = crust * 0.8;
                         c.ear = crust * 0.5;
                     }
-                    dl.with(Xf::at(v2(x, -150.0)), |dl| loaf_top(dl, &v));
+                    dl.with(Xf::at(v2(x, wc.y + 4.0)), |dl| loaf_top(dl, &v));
                 }
             })
         });
         self.oven.set(ctx.riso, &d);
-        let meter = list(|dl| {
-            let w = 520.0;
-            let track = proof_core::geom::rounded_rect(rect(-w * 0.5, -22.0, w, 44.0), 22.0);
-            dl.backing(&track);
-            for (i, (label_ink, tone)) in
-                [(Ink::Yellow, 0.45), (Ink::Yellow, 0.9), (Ink::Pink, 0.75)].iter().enumerate()
-            {
-                let x0 = -w * 0.5 + i as f32 * w / 3.0;
-                let seg = proof_core::geom::rect_poly(rect(x0, -22.0, w / 3.0, 44.0));
-                dl.clipped(&track, |dl| {
-                    dl.fill(*label_ink, *tone, &seg);
-                    if i == 2 {
-                        dl.fill(Ink::Yellow, 0.9, &seg);
-                        dl.ht(Ink::Key, 0.25, &seg);
-                    }
-                });
-            }
-            dl.outline(Ink::Key, 4.0, &track);
-            let mx = -w * 0.5 + w * t.min(1.0);
-            let marker = vec![v2(mx, -30.0), v2(mx - 16.0, -58.0), v2(mx + 16.0, -58.0)];
-            dl.fill(Ink::Pink, 1.0, &marker);
-            dl.outline(Ink::Key, 3.5, &marker);
-            dl.line(Ink::Key, 5.0, &[v2(mx, -24.0), v2(mx, 24.0)]);
-        });
+        let meter = list(|dl| props::crust_gauge(dl, 500.0, t));
         self.meter.set(ctx.riso, &meter);
     }
 
@@ -488,9 +542,26 @@ impl Morning {
         for a in self.reveal.drain(..) {
             a.free();
         }
+        for a in self.stamps.drain(..) {
+            a.free();
+        }
         for mut l in self.reveal_labels.drain(..) {
             l.queue_free();
         }
+    }
+
+    /// The reveal card's rectangle: centred between the ribbon and the action bar.
+    fn card_rect(&self, ctx: &Ctx) -> proof_core::geom::Rect {
+        let y0 = ctx.lay.top + ui::RIBBON_Y + 30.0;
+        let y1 = self.bar - ui::PILL_H * 0.5 - 22.0;
+        let h = (y1 - y0).min(830.0);
+        rect(40.0, y0 + (y1 - y0 - h) * 0.5, 640.0, h)
+    }
+
+    fn loaf_spot(&self, ctx: &Ctx, i: usize, n: usize) -> (V2, f32) {
+        let c = self.card_rect(ctx);
+        let y = c.y + 64.0 + (c.h - 64.0) * 0.28;
+        if n == 1 { (v2(360.0, y), 150.0) } else { (v2(360.0 + (i as f32 - 0.5) * 300.0, y), 112.0) }
     }
 
     fn enter_reveal(&mut self, ctx: &mut Ctx, loaves: Vec<Loaf>) {
@@ -498,46 +569,81 @@ impl Morning {
         self.meter.set_visible(false);
         self.clear_reveal();
         let mut rn = self.rn.clone();
-        let h = ctx.lay.h;
-        let card = list(|dl| props::ticket(dl, 660.0, 800.0, Ink::Yellow));
-        let card_c = v2(360.0, 150.0 + 400.0 + (h - 1280.0) * 0.2);
-        self.reveal.push(ctx.riso.art(&mut rn, card_c, &card));
+        let c = self.card_rect(ctx);
+        let card = list(|dl| {
+            props::ticket(dl, c.w, c.h, Ink::Yellow);
+            let y = -c.h * 0.5 + 64.0 + (c.h - 64.0) * 0.62;
+            props::dashed(dl, v2(-c.w * 0.5 + 34.0, y), v2(c.w * 0.5 - 34.0, y), 8.0, 7.0, 2.0, 0.55);
+            proof_core::art::twinkle(dl, v2(-c.w * 0.5 + 44.0, -c.h * 0.5 + 60.0), 12.0, Ink::Pink);
+            proof_core::art::twinkle(dl, v2(c.w * 0.5 - 44.0, -c.h * 0.5 + 60.0), 12.0, Ink::Yellow);
+        });
+        self.reveal.push(ctx.riso.art(&mut rn, c.center(), &card));
+        self.reveal_labels.push(
+            ctx.riso.text(
+                &mut rn,
+                &TextSpec::new("Fresh from Toasty!", rect(c.x + 60.0, c.y + 34.0, c.w - 120.0, 48.0), 32.0)
+                    .bold(),
+            ),
+        );
         let n = loaves.len();
         for (i, l) in loaves.iter().enumerate() {
-            let x = if n == 1 { 360.0 } else { 200.0 + i as f32 * 320.0 };
-            let mut a = ctx.riso.art(&mut rn, v2(x, card_c.y - 110.0), &DrawList::new());
+            let (p, r) = self.loaf_spot(ctx, i, n);
+            let mut a = ctx.riso.art(&mut rn, p, &DrawList::new());
             a.set_scale(0.2);
             self.reveal.push(a);
-            let title =
-                TextSpec::new(l.title(), rect(x - 160.0, card_c.y + 70.0, 320.0, 80.0), 25.0).bold().wrap();
+            let (tw, size) = if n == 1 { (540.0, 28.0) } else { (290.0, 23.0) };
+            let title = TextSpec::new(l.title(), rect(p.x - tw * 0.5, p.y + r * 1.12 + 10.0, tw, 70.0), size)
+                .bold()
+                .wrap();
             self.reveal_labels.push(ctx.riso.text(&mut rn, &title));
-            let _ = l;
         }
         let best = loaves.iter().max_by(|a, b| a.quality.total_cmp(&b.quality)).cloned();
         if let Some(b) = best {
-            let crumb = list(|dl| crumb_slice(dl, 200.0, 130.0, b.openness, b.crust, b.seed));
-            let a = ctx.riso.art(&mut rn, v2(200.0, card_c.y + 250.0), &crumb);
-            self.reveal.push(a);
-            let txt = format!(
-                "Crumb from {}:\n{}",
-                b.starter,
-                if b.openness > 0.7 {
-                    "open & airy!"
-                } else if b.openness > 0.45 {
-                    "soft & even"
-                } else {
-                    "a bit tight"
-                }
+            let yd = c.y + 64.0 + (c.h - 64.0) * 0.62;
+            let ph = (c.y + c.h - 30.0 - yd - 24.0).clamp(150.0, 210.0);
+            let pw = ph * 1.2;
+            let pc = v2(c.x + 34.0 + pw * 0.5 + 10.0, yd + 24.0 + ph * 0.5);
+            let photo = list(|dl| {
+                dl.with(Xf::IDENTITY.rotated(-0.04), |dl| {
+                    props::photo(dl, pw, ph, Ink::Blue);
+                    let k = (pw - 44.0) / 230.0;
+                    dl.with(Xf::at(v2(0.0, -16.0 + 35.0 * k)).scaled(k), |dl| {
+                        crumb_slice(dl, 200.0, 130.0, b.openness, b.crust, b.seed)
+                    });
+                })
+            });
+            self.reveal.push(ctx.riso.art(&mut rn, pc, &photo));
+            let word = if b.openness > 0.7 {
+                "open & airy!"
+            } else if b.openness > 0.45 {
+                "soft & even"
+            } else {
+                "a bit tight"
+            };
+            let tx = pc.x + pw * 0.5 + 26.0;
+            self.reveal_labels.push(
+                ctx.riso.text(
+                    &mut rn,
+                    &TextSpec::new(
+                        format!("Crumb from {}", b.starter),
+                        rect(tx, pc.y - 52.0, c.x + c.w - 30.0 - tx, 40.0),
+                        22.0,
+                    )
+                    .left()
+                    .plain(),
+                ),
             );
             self.reveal_labels.push(ctx.riso.text(
                 &mut rn,
-                &TextSpec::new(txt, rect(330.0, card_c.y + 190.0, 300.0, 120.0), 24.0).left().wrap(),
+                &TextSpec::new(word, rect(tx, pc.y - 14.0, c.x + c.w - 30.0 - tx, 48.0), 30.0).bold().left(),
             ));
         }
-        let next = Button::pill(ctx, &mut rn, rect(210.0, h - 104.0, 300.0, 80.0), "Yay!", Ink::Pink);
+        let (_, pri) = ui::bar_rects(self.bar, false);
+        let next = Button::pill(ctx, &mut rn, pri, "Yay!", Ink::Pink);
         self.btns.add(Btn::Next, next);
         self.step = Step::Reveal { loaves, t: 0.0, stamped: false };
-        self.set_prompt("");
+        self.reveal_shot = false;
+        self.set_prompt(ctx, "");
         ctx.sfx(Sfx::Ding);
         ctx.kick(0.8);
     }
@@ -547,7 +653,7 @@ impl Morning {
         let bloom = ease_out_cubic((t / 1.0).min(1.0));
         let q = (bloom * 10.0).round() / 10.0;
         for (i, l) in loaves.iter().enumerate() {
-            let r = if n == 1 { 165.0 } else { 118.0 };
+            let (_, r) = self.loaf_spot(ctx, i, n);
             let mut v: LoafView = l.view(r);
             v.spring = l.spring * q;
             for c in &mut v.cuts {
@@ -560,20 +666,19 @@ impl Morning {
         }
         if !*stamped && t > 1.05 {
             *stamped = true;
-            let loaf_y = self.reveal[1].pos().y;
             let mut rn = self.rn.clone();
             for (i, l) in loaves.iter().enumerate() {
-                let lx = if n == 1 { 360.0 } else { 200.0 + i as f32 * 320.0 };
-                let off = if n == 1 { 150.0 } else { 100.0 };
-                let (x, card_y) = (lx + off, loaf_y + off + 250.0);
+                let (p, r) = self.loaf_spot(ctx, i, n);
                 let stars = l.stars as u32;
                 let seed = l.seed;
-                let st = list_at(Xf::IDENTITY.rotated(-0.25 + 0.1 * i as f32), |dl| {
-                    props::stamp(dl, 62.0, stars, Ink::Pink, seed)
+                let sr = if n == 1 { 64.0 } else { 52.0 };
+                let st = list_at(Xf::IDENTITY.rotated(-0.22 + 0.12 * i as f32), |dl| {
+                    props::stamp(dl, sr, stars, Ink::Pink, seed)
                 });
-                let mut a = ctx.riso.art(&mut rn, v2(x, card_y - 250.0), &st);
+                let at = p + v2(r * 0.95, r * 0.7);
+                let mut a = ctx.riso.art(&mut rn, at, &st);
                 a.set_scale(1.6);
-                self.reveal.push(a);
+                self.stamps.push(a);
             }
             ctx.sfx(Sfx::Stamp);
             ctx.buzz(35);
@@ -584,8 +689,7 @@ impl Morning {
         }
         if *stamped {
             let k = ease_out_back(((t - 1.05) / 0.25).clamp(0.0, 1.0));
-            let base = 1 + n;
-            for a in self.reveal.iter_mut().skip(base + if n > 0 { 1 } else { 0 }) {
+            for a in self.stamps.iter_mut() {
                 a.set_scale(1.6 - 0.6 * k);
             }
         }
@@ -593,12 +697,11 @@ impl Morning {
 
     fn after_baking(&mut self, ctx: &mut Ctx) {
         self.clear_reveal();
-        self.clear_work();
+        self.clear_trays();
         self.btns.clear();
-        for (_, a) in self.bannetons.drain(..) {
-            a.free();
-        }
+        self.clear_bannetons();
         self.oven.set_visible(false);
+        self.board.set_visible(false);
         self.dough.set_visible(false);
         self.guide_art.set_visible(false);
         let treats = ctx.state.unlocked_treats();
@@ -611,52 +714,77 @@ impl Morning {
 
     // --- Treats ------------------------------------------------------------------------------
 
+    fn clear_tray(&mut self) {
+        for a in self.tray.drain(..) {
+            a.free();
+        }
+        for a in self.tray_props.drain(..) {
+            a.free();
+        }
+        for mut l in self.work_labels.drain(..) {
+            l.queue_free();
+        }
+    }
+
     fn enter_treats(&mut self, ctx: &mut Ctx, treats: Vec<Treat>) {
         self.btns.clear();
+        self.clear_tray();
         let mut rn = self.rn.clone();
         let n = treats.len() as f32;
+        let y = self.dough_c.y - 20.0;
         for (i, t) in treats.iter().enumerate() {
-            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 150.0;
-            let b = Button::round(ctx, &mut rn, v2(x, 640.0), 58.0, Ink::Yellow, Icon::Treat(*t));
+            let x = 360.0 + (i as f32 - (n - 1.0) * 0.5) * 190.0;
+            let b = Button::round(ctx, &mut rn, v2(x, y), 62.0, Ink::Yellow, Icon::Treat(*t));
             self.btns.add(Btn::Treat(*t), b);
+            self.work_labels.push(ctx.riso.text(
+                &mut rn,
+                &TextSpec::new(t.name(), rect(x - 95.0, y + 76.0, 190.0, 60.0), 22.0).bold().wrap(),
+            ));
         }
-        let h = ctx.lay.h;
-        let skip = Button::pill(ctx, &mut rn, rect(230.0, h - 104.0, 260.0, 76.0), "Skip", Ink::Blue);
+        let (_, pri) = ui::bar_rects(self.bar, false);
+        let skip = Button::pill(ctx, &mut rn, pri, "Skip treats", Ink::Blue);
         self.btns.add(Btn::SkipTreats, skip);
         self.step = Step::Treats { kind: None, done: [false; 4] };
-        self.set_prompt(&format!("Turn {} discard into a treat tray?", TRAY_COST));
+        self.set_prompt(ctx, &format!("Turn {} spoons of discard into treats?", TRAY_COST));
         ctx.note(
             "treats",
             "Every feeding leaves a spoon of discard. Two spoons make a whole tray of treats!",
         );
     }
 
+    fn tray_spot(&self, i: usize) -> V2 {
+        v2(360.0 + (i as f32 - 1.5) * 142.0, self.dough_c.y)
+    }
+
     fn start_tray(&mut self, ctx: &mut Ctx, kind: Treat) {
         self.btns.clear();
+        self.clear_tray();
         let mut rn = self.rn.clone();
+        let pan = list(|dl| props::sheet_pan(dl, 620.0, 200.0));
+        self.tray_props.push(ctx.riso.art(&mut rn, self.dough_c + v2(0.0, 8.0), &pan));
         for i in 0..4 {
-            let a = ctx.riso.art(
-                &mut rn,
-                v2(135.0 + i as f32 * 150.0, 640.0),
-                &list(|dl| treat_raw(dl, kind, 130.0, i)),
-            );
+            let a =
+                ctx.riso.art(&mut rn, self.tray_spot(i), &list(|dl| treat_raw(dl, kind, 124.0, i as u32)));
             self.tray.push(a);
         }
         self.step = Step::Treats { kind: Some(kind), done: [false; 4] };
-        self.set_prompt(match kind {
-            Treat::Muffin => "Swipe across to bake the muffins!",
-            Treat::CinnamonBun => "Swipe across to drizzle the icing!",
-            Treat::Bagel => "Swipe across to seed the bagels!",
-        });
+        self.set_prompt(
+            ctx,
+            match kind {
+                Treat::Muffin => "Swipe across to bake the muffins!",
+                Treat::CinnamonBun => "Swipe across to drizzle the icing!",
+                Treat::Bagel => "Swipe across to seed the bagels!",
+            },
+        );
     }
 
     fn touch_tray(&mut self, ctx: &mut Ctx, p: V2) {
         if let Step::Treats { kind: Some(kind), done } = &mut self.step {
             for (i, a) in self.tray.iter_mut().enumerate() {
-                if !done[i] && a.pos().dist(p) < 75.0 {
+                if !done[i] && a.pos().dist(p) < 72.0 {
                     done[i] = true;
                     let k = *kind;
-                    a.set(ctx.riso, &list(|dl| treat(dl, k, 130.0, i as u32)));
+                    a.set(ctx.riso, &list(|dl| treat(dl, k, 124.0, i as u32)));
                     a.set_scale(1.15);
                     ctx.sfx_pitch(Sfx::Plop, 1.0 + i as f32 * 0.12);
                 }
@@ -677,17 +805,14 @@ impl Morning {
 
     fn enter_done(&mut self, ctx: &mut Ctx) {
         self.btns.clear();
-        for a in self.tray.drain(..) {
-            a.free();
-        }
+        self.clear_tray();
         let mut rn = self.rn.clone();
-        let h = ctx.lay.h;
-        let open =
-            Button::pill(ctx, &mut rn, rect(180.0, h - 110.0, 360.0, 88.0), "Open the shop!", Ink::Pink);
+        let (_, pri) = ui::bar_rects(self.bar, false);
+        let open = Button::pill(ctx, &mut rn, pri, "Open the shop!", Ink::Pink);
         self.btns.add(Btn::OpenShop, open);
         let n = ctx.state.shelf.len();
-        self.set_prompt(&format!("The shelf is stocked: {n} goodies!"));
-        // A little preview of the shelf: loaves on top, treats below.
+        self.set_prompt(ctx, &format!("The shelf is stocked: {n} goodies!"));
+        // Everything cools on racks on the bench: loaves on top, treats below.
         let goods = ctx.state.shelf.clone();
         let loaves: Vec<_> = goods
             .iter()
@@ -697,24 +822,50 @@ impl Morning {
             .iter()
             .filter_map(|g| if let proof_core::bake::Good::Treat(t) = g { Some(t.clone()) } else { None })
             .collect();
+        let per = 3usize;
+        let rows = loaves.len().div_ceil(per).max(1);
+        let has_treats = !treats.is_empty();
+        // Centre the whole spread (racks + pan) on the free bench between the wall and the
+        // action bar.
+        let bench_mid = (self.lay.dough.y - self.lay.board_r + self.bar - ui::PILL_H) * 0.5 + 20.0;
+        let spread = rows as f32 * 190.0 + if has_treats { 170.0 } else { 0.0 };
+        // Taller benches get a slightly bigger spread.
+        let avail = (self.bar - ui::PILL_H * 0.5 - 30.0) - (self.lay.dough.y - self.lay.board_r);
+        let zoom = (avail / (spread + 240.0)).clamp(1.0, 1.25);
+        let top_y = -spread * 0.5 + 25.0;
         let preview = list(|dl| {
-            let per = 3usize;
-            for (i, l) in loaves.iter().enumerate() {
-                let row = (i / per) as f32;
-                let in_row = (loaves.len() - (i / per) * per).min(per) as f32;
-                let x = ((i % per) as f32 - (in_row - 1.0) * 0.5) * 200.0;
-                dl.with(Xf::at(v2(x, row * 190.0)), |dl| loaf_top(dl, &l.view(80.0)));
-            }
-            let ty = loaves.len().div_ceil(per) as f32 * 190.0 + 10.0;
-            let nt = treats.len().min(6) as f32;
-            for (i, t) in treats.iter().take(6).enumerate() {
-                let x = (i as f32 - (nt - 1.0) * 0.5) * 100.0;
-                dl.with(Xf::at(v2(x, ty)), |dl| treat(dl, t.kind, 96.0, t.seed));
-            }
+            dl.with(Xf::at(v2(360.0, bench_mid)).scaled(zoom), |dl| {
+                for row in 0..rows {
+                    let in_row = (loaves.len() - row * per).min(per);
+                    let y = top_y + row as f32 * 190.0;
+                    if in_row > 0 {
+                        dl.with(Xf::at(v2(0.0, y + 40.0)), |dl| {
+                            props::cooling_rack(dl, in_row as f32 * 200.0 + 30.0, 150.0)
+                        });
+                    }
+                    for k in 0..in_row {
+                        let l = &loaves[row * per + k];
+                        let x = (k as f32 - (in_row as f32 - 1.0) * 0.5) * 200.0;
+                        dl.with(Xf::at(v2(x, y + 30.0)), |dl| loaf_top(dl, &l.view(80.0)));
+                    }
+                }
+                if has_treats {
+                    let nt = treats.len().min(6);
+                    let y = top_y + rows as f32 * 190.0 + 40.0;
+                    dl.with(Xf::at(v2(0.0, y + 10.0)), |dl| {
+                        props::sheet_pan(dl, nt as f32 * 104.0 + 60.0, 130.0)
+                    });
+                    for (i, t) in treats.iter().take(6).enumerate() {
+                        let x = (i as f32 - (nt as f32 - 1.0) * 0.5) * 104.0;
+                        dl.with(Xf::at(v2(x, y)), |dl| treat(dl, t.kind, 96.0, t.seed));
+                    }
+                }
+            })
         });
-        let a = ctx.riso.art(&mut rn, v2(360.0, 520.0), &preview);
+        let a = ctx.riso.art(&mut rn, V2::ZERO, &preview);
         self.tray.push(a);
         self.step = Step::Done;
+        self.done_shot = false;
         ctx.sfx(Sfx::Sparkle);
     }
 
@@ -801,8 +952,6 @@ impl Morning {
     }
 }
 
-use proof_core::draw::DrawList;
-
 impl Screen for Morning {
     fn root(&self) -> Gd<Node2D> {
         self.root.clone()
@@ -819,11 +968,12 @@ impl Screen for Morning {
             Step::Peek(t) => {
                 let t = t + dt;
                 let k = ease_out_cubic((t / 1.4).min(1.0));
+                let js = self.jar_scale;
                 for (i, a) in self.jars.iter_mut().enumerate() {
                     if let Some(s) = ctx.state.starters.get(i) {
                         let mut v = s.view((t * 4.0).floor() / 4.0);
                         v.rise = v.band + (s.rise - v.band) * ((k * 8.0).floor() / 8.0);
-                        a.set(ctx.riso, &list_at(Xf::IDENTITY.scaled(0.42), |dl| jar(dl, &v)));
+                        a.set(ctx.riso, &list_at(Xf::IDENTITY.scaled(js), |dl| jar(dl, &v)));
                     }
                 }
                 if t > 1.8 {
@@ -876,7 +1026,9 @@ impl Screen for Morning {
                         self.line.clear_points();
                         self.line.add_point(vec2(q));
                     }
-                    Step::Oven { .. } if self.oven.pos().dist(q) < 220.0 => self.pull(ctx),
+                    Step::Oven { .. } if (self.oven.pos() + v2(0.0, -180.0)).dist(q) < 220.0 => {
+                        self.pull(ctx)
+                    }
                     Step::Treats { kind: Some(_), .. } => {
                         self.cutting = true;
                         self.touch_tray(ctx, q);
@@ -941,7 +1093,7 @@ impl Screen for Morning {
                         ctx.riso,
                         &mut rn,
                         &format!("+{count} {}s!", treat.name().to_lowercase()),
-                        v2(360.0, 520.0),
+                        self.dough_c + v2(0.0, -150.0),
                         34.0,
                         Ink::Key,
                     ));
@@ -1012,9 +1164,13 @@ impl Screen for Morning {
                 None
             }
             Step::Reveal { t, .. } => {
-                if t > 1.5 {
-                    self.enter_work(ctx);
+                if t > 1.5 && !self.reveal_shot {
+                    // Photograph the settled card first, then move on.
+                    self.reveal_shot = true;
                     Some("reveal".into())
+                } else if self.reveal_shot {
+                    self.enter_work(ctx);
+                    None
                 } else {
                     None
                 }
@@ -1023,18 +1179,23 @@ impl Screen for Morning {
                 let treats = ctx.state.unlocked_treats();
                 let t = treats[ctx.state.day as usize % treats.len()];
                 self.start_tray(ctx, t);
-                None
+                Some("tray".into())
             }
             Step::Treats { kind: Some(_), .. } => {
-                for x in [135.0, 285.0, 435.0, 585.0] {
-                    self.touch_tray(ctx, v2(x, 640.0));
+                let spots: Vec<V2> = self.tray.iter().map(|a| a.pos()).collect();
+                for p in spots {
+                    self.touch_tray(ctx, p);
                 }
                 self.finish_tray(ctx);
                 Some("treats".into())
             }
             Step::Done => {
+                if !self.done_shot {
+                    self.done_shot = true;
+                    return Some("stocked".into());
+                }
                 ctx.act(proof_core::state::Action::OpenShop);
-                Some("stocked".into())
+                None
             }
         }
     }

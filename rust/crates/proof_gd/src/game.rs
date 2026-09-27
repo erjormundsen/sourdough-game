@@ -13,7 +13,7 @@ use godot::classes::{
 use godot::prelude::*;
 use proof_core::anim::{Spring, ease_out_back};
 use proof_core::art::props;
-use proof_core::geom::{V2, rect, v2};
+use proof_core::geom::{rect, v2};
 use proof_core::ink::{Edition, Ink, Palette};
 use proof_core::state::{Action, GameState, Phase};
 
@@ -23,7 +23,12 @@ struct Toast {
     art: Art,
     label: Gd<Label>,
     t: f32,
+    /// Shown in the low lane (above the action bar) instead of under the masthead.
+    low: bool,
 }
+
+/// How long a toast stays up (seconds).
+const TOAST_LIFE: f32 = 2.6;
 
 struct Note {
     root: Gd<Node2D>,
@@ -70,6 +75,9 @@ pub struct Game {
     pal_to: Palette,
     pal_t: f32,
     toasts: Vec<Toast>,
+    /// The current screen wants toasts in the low lane (the night pages' nameplate lives
+    /// where the top lane is).
+    toast_low: bool,
     note: Option<Note>,
     mode: Mode,
     lay: Layout,
@@ -118,6 +126,7 @@ impl INode2D for Game {
             pal_to: p,
             pal_t: 1.0,
             toasts: Vec::new(),
+            toast_low: false,
             note: None,
             mode: Mode::Play,
             lay: Layout { w: 720.0, h: 1280.0, top: 0.0, bottom: 0.0 },
@@ -245,6 +254,11 @@ impl INode2D for Game {
     }
 }
 
+/// Grandma's note sits in the middle of the safe area.
+fn note_centre(lay: Layout) -> f32 {
+    lay.top + (lay.h - lay.top - lay.bottom) * 0.5
+}
+
 fn edition_for(phase: Phase) -> Edition {
     match phase {
         Phase::Morning => Edition::Dawn,
@@ -262,12 +276,15 @@ impl Game {
         let win =
             self.base().get_window().map(|w| w.get_size()).unwrap_or(Vector2i::new(vw as i32, vh as i32));
         let px_per_unit = (win.y as f32 / vh).max(0.01);
-        let top = if safe.size.y > 0 && win.y > 0 {
-            (safe.position.y as f32 / px_per_unit).clamp(0.0, 80.0)
+        let (top, bottom) = if safe.size.y > 0 && win.y > 0 {
+            let top = (safe.position.y as f32 / px_per_unit).clamp(0.0, 80.0);
+            // Home-indicator strip (only when the window fills the display).
+            let below = (win.y - (safe.position.y + safe.size.y)) as f32 / px_per_unit;
+            (top, below.clamp(0.0, 40.0))
         } else {
-            0.0
+            (0.0, 0.0)
         };
-        Layout { w: vw, h: vh, top, bottom: 0.0 }
+        Layout { w: vw, h: vh, top, bottom }
     }
 
     fn raster_scale(&self) -> f32 {
@@ -426,6 +443,11 @@ impl Game {
         self.pal_from = cur;
         self.pal_to = edition.palette();
         self.pal_t = if cur == self.pal_to { 1.0 } else { 0.0 };
+        // Old news fades out quickly on a new page; pick this page's toast lane.
+        for t in &mut self.toasts {
+            t.t = t.t.max(TOAST_LIFE - 0.4);
+        }
+        self.toast_low = matches!(nav, Nav::Night | Nav::Zine);
         let (mut ctx, _) = self.ctx_parts();
         let screen: Box<dyn Screen> = match nav {
             Nav::Phase => match ctx.state.phase {
@@ -446,14 +468,33 @@ impl Game {
     // Overlays: toasts and Grandma's notes
     // ------------------------------------------------------------------------------------
 
+    /// Toasts hang in a lane just below the masthead and its headline ribbon, or (low lane)
+    /// stack upward from just above the bottom action bar.
+    fn toast_y(&self, i: usize, low: bool) -> f32 {
+        if low {
+            let bar_top = self.lay.h - self.lay.bottom - 26.0 - crate::ui::PILL_H;
+            bar_top - 52.0 - i as f32 * 72.0
+        } else {
+            self.lay.top + 190.0 + i as f32 * 72.0
+        }
+    }
+
     fn spawn_toast(&mut self, text: &str) {
         let mut ov: Gd<Node> = self.overlay.clone().expect("overlay").upcast();
+        let low = self.toast_low;
+        let y = self.toast_y(self.toasts.iter().filter(|t| t.low == low).count(), low);
         let riso = self.riso.as_mut().expect("riso");
-        let y = self.lay.top + 140.0 + self.toasts.len() as f32 * 84.0;
-        let art = riso.art(&mut ov, v2(360.0, y), &list(|d| props::ticket(d, 560.0, 70.0, Ink::Yellow)));
+        let size = 23.0;
+        let tw = riso.bold.get_string_size_ex(text).font_size(size as i32).done().x;
+        let (w, h) = if tw + 104.0 <= 660.0 { ((tw + 104.0).max(320.0), 60.0) } else { (660.0, 88.0) };
+        let stub = 57.0;
+        let art = riso.art(&mut ov, v2(360.0, y), &list(|d| props::slip(d, w, h, Ink::Yellow)));
         let mut an = art.as_node();
-        let label = riso.text(&mut an, &TextSpec::new(text, rect(-270.0, -26.0, 540.0, 56.0), 25.0).bold());
-        self.toasts.push(Toast { art, label, t: 0.0 });
+        let spec = TextSpec::new(text, rect(-w * 0.5 + stub + 8.0, -h * 0.5 - 2.0, w - stub - 20.0, h), size)
+            .bold()
+            .plain();
+        let label = riso.text(&mut an, &if h > 60.0 { spec.wrap() } else { spec });
+        self.toasts.push(Toast { art, label, t: 0.0, low });
         if self.toasts.len() > 3 {
             let t = self.toasts.remove(0);
             t.art.free();
@@ -471,39 +512,67 @@ impl Game {
         dim.set_position(Vector2::new(-400.0, -200.0));
         dim.set_size(Vector2::new(1520.0, lay.h + 400.0));
         let mut c = riso.ink(Ink::Key);
-        c.a = 0.28;
+        c.a = 0.32;
         dim.set_color(c);
         dim.set_mouse_filter(godot::classes::control::MouseFilter::IGNORE);
         rn.add_child(&dim);
-        let cy = lay.h * 0.5;
+        // Size the card to the message: one ruled line (40 units) per line of text.
+        let tw = riso.font.get_string_size_ex(text).font_size(26).done().x;
+        let lines = ((tw / ((628.0 - 104.0) * 0.86)).ceil() as i32).max(2) as f32;
+        let (cw, ch) = (628.0, (104.0 + lines * 40.0 + 206.0).clamp(440.0, 640.0));
+        let cy = note_centre(lay);
+        let (x0, y0) = (360.0 - cw * 0.5, cy - ch * 0.5);
         let card = list(|d| {
-            props::ticket(d, 600.0, 470.0, Ink::Pink);
-            proof_core::art::face(d, v2(0.0, -150.0), 70.0, proof_core::art::Expr::Happy, V2::ZERO);
-            proof_core::art::twinkle(d, v2(230.0, -190.0), 16.0, Ink::Yellow);
-            proof_core::art::twinkle(d, v2(-236.0, 150.0), 12.0, Ink::Pink);
+            props::note_card(d, cw, ch);
+            props::grandma(d, v2(-cw * 0.5 + 74.0, -ch * 0.5 + 40.0), 52.0);
+            proof_core::art::twinkle(d, v2(cw * 0.5 - 40.0, -ch * 0.5 + 46.0), 13.0, Ink::Yellow);
+            proof_core::art::props::heart_icon(d, v2(cw * 0.5 - 70.0, ch * 0.5 - 148.0), 26.0);
         });
         let _card = riso.art(&mut rn, v2(360.0, cy), &card);
         riso.text(
             &mut rn,
-            &TextSpec::new("A note from Grandma", rect(90.0, cy - 232.0, 540.0, 40.0), 24.0).bold().plain(),
+            &TextSpec::new("A note from Grandma", rect(x0 + 140.0, y0 + 20.0, cw - 170.0, 56.0), 28.0)
+                .bold()
+                .left(),
         );
-        riso.text(&mut rn, &TextSpec::new(text, rect(100.0, cy - 110.0, 520.0, 220.0), 27.0).wrap());
+        // The body sits on the card's ruled lines (40 units apart, first at y0 + 136).
+        let mut body = riso.text(
+            &mut rn,
+            &TextSpec::new(text, rect(x0 + 66.0, y0 + 104.0, cw - 104.0, 280.0), 26.0).wrap().left().plain(),
+        );
+        body.add_theme_constant_override("line_spacing", 8);
+        body.set_vertical_alignment(godot::global::VerticalAlignment::TOP);
+        riso.text(
+            &mut rn,
+            &TextSpec::new("— Grandma", rect(x0 + 260.0, y0 + ch - 170.0, cw - 360.0, 40.0), 24.0)
+                .right()
+                .plain(),
+        );
         let mut ctx = Ctx { state: &self.state, riso, out: &mut self.out, lay, time: self.time };
-        let ok = Button::pill(&mut ctx, &mut rn, rect(250.0, cy + 138.0, 220.0, 70.0), "Got it!", Ink::Pink);
+        let ok = Button::pill(
+            &mut ctx,
+            &mut rn,
+            rect(360.0 - 130.0, y0 + ch - 112.0, 260.0, 76.0),
+            "Got it!",
+            Ink::Pink,
+        );
         root.set_scale(Vector2::new(0.6, 0.6));
         self.note = Some(Note { root, key, ok, t: 0.0 });
     }
 
     fn update_overlays(&mut self, dt: f32) {
         let mut keep = Vec::new();
-        for (i, mut t) in std::mem::take(&mut self.toasts).into_iter().enumerate() {
+        let mut lanes = [0usize; 2];
+        for mut t in std::mem::take(&mut self.toasts) {
             t.t += dt;
-            let life = 2.6;
+            let life = TOAST_LIFE;
             if t.t >= life {
                 t.art.free();
                 continue;
             }
-            let y = self.lay.top + 140.0 + i as f32 * 84.0;
+            let i = lanes[usize::from(t.low)];
+            lanes[usize::from(t.low)] += 1;
+            let y = self.toast_y(i, t.low);
             let slide = ease_out_back((t.t / 0.35).min(1.0));
             t.art.set_pos(v2(360.0, y - 60.0 * (1.0 - slide)));
             let a = if t.t > life - 0.4 { (life - t.t) / 0.4 } else { 1.0 };
@@ -515,7 +584,7 @@ impl Game {
         if let Some(n) = self.note.as_mut() {
             n.t += dt;
             let s = 0.6 + 0.4 * ease_out_back((n.t / 0.4).min(1.0));
-            let c = Vector2::new(360.0, self.lay.h * 0.5);
+            let c = Vector2::new(360.0, note_centre(self.lay));
             n.root.set_scale(Vector2::new(s, s));
             n.root.set_position(c - c * s);
             let riso = self.riso.as_mut().expect("riso");

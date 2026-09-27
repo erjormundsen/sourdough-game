@@ -1,6 +1,9 @@
 //! The riso press: turns core `DrawList`s into textures and builds printed nodes.
 //!
-//! One shared ink material holds the palette, misregistration and grain, so edition
+//! Every printed layer shares the press model in `riso_press.gdshaderinc`: the ink material
+//! (plates → screened ink with per-drum misregistration and ink film), the text material, the
+//! paper backing and the page itself all read the same paper/ink textures and the same
+//! [`PressStyle`] uniforms as the artboard's CPU preview (`proof_raster::press`). Edition
 //! crossfades and the print-in "kick" are just uniform updates.
 
 use godot::classes::canvas_item::TextureFilter;
@@ -14,8 +17,9 @@ use godot::prelude::*;
 use proof_core::draw::DrawList;
 use proof_core::geom::{V2, Xf};
 use proof_core::ink::{Ink, Palette, Rgb};
-use proof_raster::{RasterConfig, grain_texture, rasterize};
+use proof_raster::{Param, PressStyle, PressTextures, RasterConfig, Tex, press_textures, rasterize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub fn vec2(v: V2) -> Vector2 {
     Vector2::new(v.x, v.y)
@@ -50,17 +54,40 @@ pub struct Riso {
     cfg: RasterConfig,
     /// Current print-in kick (0 = in register).
     pub kick: f32,
-    /// Constant gentle misregistration in reference units.
-    pub offsets: [V2; 3],
+    /// How the press prints: drum registration, ink film, paper (shared with the artboard).
+    pub style: PressStyle,
+    press: Arc<PressTextures>,
+    /// Palette last sent to the materials.
+    applied: Option<Palette>,
+    /// (kick, calm) last sent to the ink material.
+    drums_applied: Option<(f32, bool)>,
     /// Reduce motion: smaller kicks and offsets.
     pub calm: bool,
 }
 
-fn material(path: &str, grain: &Gd<ImageTexture>) -> Gd<ShaderMaterial> {
+fn texture(t: &Tex) -> Gd<ImageTexture> {
+    let n = t.size as i32;
+    let img = Image::create_from_data(n, n, false, Format::RGBA8, &PackedByteArray::from(t.rgba.as_slice()))
+        .expect("press image");
+    ImageTexture::create_from_image(&img).expect("press texture")
+}
+
+fn material(path: &str, tex: &[(&str, &Gd<ImageTexture>)]) -> Gd<ShaderMaterial> {
     let mut m = ShaderMaterial::new_gd();
     m.set_shader(&load::<Shader>(path));
-    m.set_shader_parameter("grain_tex", &grain.to_variant());
+    for (name, t) in tex {
+        m.set_shader_parameter(*name, &t.to_variant());
+    }
     m
+}
+
+fn set_param(m: &mut Gd<ShaderMaterial>, name: &str, p: Param) {
+    let v = match p {
+        Param::F(x) => x.to_variant(),
+        Param::V2(x, y) => Vector2::new(x, y).to_variant(),
+        Param::V4(a) => Vector4::new(a[0], a[1], a[2], a[3]).to_variant(),
+    };
+    m.set_shader_parameter(name, &v);
 }
 
 fn weighted(base: &Gd<FontFile>, weight: i64) -> Gd<Font> {
@@ -74,15 +101,13 @@ fn weighted(base: &Gd<FontFile>, weight: i64) -> Gd<Font> {
 
 impl Riso {
     pub fn new(scale: f32, palette: Palette) -> Riso {
-        let g = grain_texture();
-        let n = proof_raster::GRAIN_SIZE as i32;
-        let img = Image::create_from_data(n, n, false, Format::RGBA8, &PackedByteArray::from(g))
-            .expect("grain image");
-        let grain = ImageTexture::create_from_image(&img).expect("grain texture");
-        let ink_mat = material("res://shaders/riso_ink.gdshader", &grain);
-        let backing_mat = material("res://shaders/riso_backing.gdshader", &grain);
-        let paper_mat = material("res://shaders/paper.gdshader", &grain);
-        let text_mat = material("res://shaders/riso_text.gdshader", &grain);
+        let press = press_textures(scale);
+        let (fine, mid, coarse) = (texture(&press.fine), texture(&press.mid), texture(&press.coarse));
+        let tex = [("fine_tex", &fine), ("mid_tex", &mid), ("coarse_tex", &coarse)];
+        let ink_mat = material("res://shaders/riso_ink.gdshader", &tex);
+        let backing_mat = material("res://shaders/riso_backing.gdshader", &tex);
+        let paper_mat = material("res://shaders/paper.gdshader", &tex);
+        let text_mat = material("res://shaders/riso_text.gdshader", &tex);
         let file = load::<FontFile>("res://fonts/Fredoka.ttf");
         let font = weighted(&file, 560);
         let bold = weighted(&file, 680);
@@ -98,38 +123,61 @@ impl Riso {
             cache: HashMap::new(),
             cfg: RasterConfig { scale, ..RasterConfig::default() },
             kick: 0.0,
-            offsets: [
-                proof_core::geom::v2(1.1, -0.75),
-                proof_core::geom::v2(-0.8, 0.55),
-                proof_core::geom::v2(0.6, 0.95),
-            ],
+            style: PressStyle::default(),
+            press,
+            applied: None,
+            drums_applied: None,
             calm: false,
         };
+        r.apply_style();
         r.apply_palette(palette);
         r.apply_kick(0.0);
         r
     }
 
+    /// Send the whole press style to every material (paper, ink film, drums).
+    pub fn apply_style(&mut self) {
+        let params = self.style.shader_params(&self.press, self.scale);
+        for m in [&mut self.ink_mat, &mut self.backing_mat, &mut self.paper_mat, &mut self.text_mat] {
+            for (name, p) in &params {
+                set_param(m, name, *p);
+            }
+        }
+    }
+
     pub fn apply_palette(&mut self, p: Palette) {
+        if self.applied == Some(p) {
+            return;
+        }
+        self.applied = Some(p);
         self.palette = p;
         for (i, ink) in p.inks.iter().enumerate() {
             self.ink_mat.set_shader_parameter(&format!("ink{i}"), &color(*ink).to_variant());
         }
-        for m in [&mut self.backing_mat, &mut self.paper_mat] {
+        for m in [&mut self.ink_mat, &mut self.backing_mat, &mut self.paper_mat, &mut self.text_mat] {
             m.set_shader_parameter("paper", &color(p.paper).to_variant());
         }
     }
 
+    /// Slam the drums out of register (`kick` 0..1, springing back to 0). Reduce motion
+    /// ("calm") keeps a gentler resting misregistration and a much smaller kick.
     pub fn apply_kick(&mut self, kick: f32) {
         let (kick, k_off) = if self.calm { (kick * 0.15, 0.5) } else { (kick, 1.0) };
-        if (kick - self.kick).abs() < 1e-4 && kick != 0.0 {
+        let key = (kick, self.calm);
+        if self.drums_applied.is_some_and(|(k, c)| c == key.1 && (k - kick).abs() < 1e-4) {
             return;
         }
+        self.drums_applied = Some(key);
         self.kick = kick;
-        self.ink_mat.set_shader_parameter("kick", &kick.to_variant());
-        for (i, o) in self.offsets.iter().enumerate() {
-            let px = *o * self.scale * k_off;
-            self.ink_mat.set_shader_parameter(&format!("off{i}"), &Vector2::new(px.x, px.y).to_variant());
+        let mut st = self.style;
+        st.kick = kick;
+        st.offsets = st.offsets.map(|o| o * k_off);
+        const SHIFT: [&str; 4] = ["shift0", "shift1", "shift2", "shift3"];
+        const LIN: [&str; 4] = ["lin0", "lin1", "lin2", "lin3"];
+        for k in 0..4 {
+            let (sh, a) = st.drums[k].affine(st.offsets[k], kick);
+            set_param(&mut self.ink_mat, SHIFT[k], Param::V2(sh.x * self.scale, sh.y * self.scale));
+            set_param(&mut self.ink_mat, LIN[k], Param::V4(a));
         }
     }
 
